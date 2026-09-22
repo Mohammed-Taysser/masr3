@@ -4,3 +4,4 @@ allowBuilds:
   bcrypt: true
   nx: true
   unrs-resolver: true
+  '@nestjs/core': false

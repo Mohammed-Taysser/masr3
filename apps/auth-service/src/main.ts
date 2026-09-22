@@ -19,20 +19,25 @@ async function bootstrap() {
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new ClassSerializerInterceptor(app.get(Reflector), {
+      excludeExtraneousValues: true,
+    }),
+  );
 
-    const builder = new DocumentBuilder()
+  const builder = new DocumentBuilder()
     .setTitle('Auth Service')
-    .setDescription('Authentication and user management for masr3 — and the only service that issues access tokens. Every other service verifies what is minted here.')
+    .setDescription(
+      'Authentication and user management for masr3 — and the only service that issues access tokens. Every other service verifies what is minted here.',
+    )
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'bearer',
     );
 
-      const document = SwaggerModule.createDocument(app, builder.build());
+  const document = SwaggerModule.createDocument(app, builder.build());
   SwaggerModule.setup(`${globalPrefix}/docs`, app, document);
-
 
   const port = configService.get<number>('PORT');
 

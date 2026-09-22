@@ -1,0 +1,274 @@
+[
+  {
+    "email": "admin@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Admin",
+    "lastName": "User",
+    "role": "ADMIN",
+    "isActive": true
+  },
+  {
+    "email": "customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Demo",
+    "lastName": "Customer",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Demo",
+    "lastName": "Rider",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "ahmed.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Ahmed",
+    "lastName": "Hassan",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "sara.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Sara",
+    "lastName": "Mahmoud",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "mona.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Mona",
+    "lastName": "Ali",
+    "role": "CUSTOMER",
+    "isActive": false
+  },
+  {
+    "email": "khaled.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Khaled",
+    "lastName": "Ibrahim",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "youssef.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Youssef",
+    "lastName": "Farouk",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "omar.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Omar",
+    "lastName": "Nabil",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "laila.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Laila",
+    "lastName": "Adel",
+    "role": "RIDER",
+    "isActive": false
+  },
+  {
+    "email": "hana.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Hana",
+    "lastName": "Samir",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "mostafa.admin@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Mostafa",
+    "lastName": "Kamal",
+    "role": "ADMIN",
+    "isActive": true
+  },
+  {
+    "email": "nour.admin@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Nour",
+    "lastName": "Sherif",
+    "role": "ADMIN",
+    "isActive": true
+  },
+  {
+    "email": "mohamed.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Mohamed",
+    "lastName": "Tarek",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "yara.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Yara",
+    "lastName": "Fathy",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "mahmoud.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Mahmoud",
+    "lastName": "Reda",
+    "role": "CUSTOMER",
+    "isActive": false
+  },
+  {
+    "email": "reem.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Reem",
+    "lastName": "Hany",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "tamer.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Tamer",
+    "lastName": "Gamal",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "dina.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Dina",
+    "lastName": "Ashraf",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "karim.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Karim",
+    "lastName": "Wael",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "ziad.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Ziad",
+    "lastName": "Mostafa",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "hossam.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Hossam",
+    "lastName": "Ayman",
+    "role": "RIDER",
+    "isActive": false
+  },
+  {
+    "email": "salma.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Salma",
+    "lastName": "Wael",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "eslam.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Eslam",
+    "lastName": "Hatem",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "yassin.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Yassin",
+    "lastName": "Magdy",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "fatma.admin@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Fatma",
+    "lastName": "Hassan",
+    "role": "ADMIN",
+    "isActive": true
+  },
+  {
+    "email": "sameh.admin@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Sameh",
+    "lastName": "Youssef",
+    "role": "ADMIN",
+    "isActive": false
+  },
+  {
+    "email": "maryam.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Maryam",
+    "lastName": "Khaled",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "adel.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Adel",
+    "lastName": "Saeed",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "nada.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Nada",
+    "lastName": "Omar",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "walid.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Walid",
+    "lastName": "Fouad",
+    "role": "CUSTOMER",
+    "isActive": true
+  },
+  {
+    "email": "huda.customer@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Huda",
+    "lastName": "Nasser",
+    "role": "CUSTOMER",
+    "isActive": false
+  },
+  {
+    "email": "ibrahim.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Ibrahim",
+    "lastName": "Salah",
+    "role": "RIDER",
+    "isActive": true
+  },
+  {
+    "email": "mariam.rider@masr3.local",
+    "password": "ChangeMe123!",
+    "firstName": "Mariam",
+    "lastName": "Khalil",
+    "role": "RIDER",
+    "isActive": true
+  }
+]

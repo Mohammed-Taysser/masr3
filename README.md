@@ -4,15 +4,15 @@
 
 ✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
 
-## Infrastructure
+## Infrastructurestructure
 
-masr3 is an Nx monorepo of 6 NestJS microservices (auth, customer, delivery, logging, notification, user). **Docker is infra only** — one Postgres per relational service, MongoDB for logging, pgbouncer in front of Postgres, Kafka (KRaft), Kafka UI, DB UI tools, Prometheus + Grafana, Jaeger, and Mailhog for dev-only email testing. App services are never containerized; they run on the host via Nx (see "App services run on the host" below). Package manager is **pnpm**.
+masr3 is an Nx monorepo of 6 NestJS microservices (auth, customer, delivery, logging, notification, user). **Docker is infrastructure only** — one Postgres per relational service, MongoDB for logging, pgbouncer in front of Postgres, Kafka (KRaft), Kafka UI, DB UI tools, Prometheus + Grafana, Jaeger, and Mailhog for dev-only email testing. App services are never containerized; they run on the host via Nx (see "App services run on the host" below). Package manager is **pnpm**.
 
 ### Setup
 
 ```sh
 pnpm install
-pnpm docker:up          # infra only: dbs, pgbouncer, kafka, ui tools, monitoring
+pnpm docker:up          # infrastructure only: dbs, pgbouncer, kafka, ui tools, monitoring
 pnpm setup:all          # per service: create .env, migrate, seed, create Kafka topics
 pnpm dev:all            # serve every service on the host
 ```
@@ -34,7 +34,7 @@ Docker:
 
 | Script                | What it does                                                                                             |
 | --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pnpm docker:up`      | Build + start the infra stack (dbs, pgbouncer, kafka, ui tools, monitoring) — no app services, see below |
+| `pnpm docker:up`      | Build + start the infrastructure stack (dbs, pgbouncer, kafka, ui tools, monitoring) — no app services, see below |
 | `pnpm docker:up:dev`  | Same, plus Mailhog (`--profile dev`)                                                                     |
 | `pnpm docker:down`    | Stop everything                                                                                          |
 | `pnpm docker:restart` | Down, then up --build                                                                                    |
@@ -58,7 +58,7 @@ Each script does the same three things in the same order, so they read identical
 2. **Migrate**, then **seed** — but only if the service actually defines those targets, which is asked of Nx rather than assumed. `customer-service` has neither today, so both steps print "defines no … target — skipped"; the day it gains a `migrate` target, its setup script starts migrating with no edit.
 3. **Create Kafka topics** where the service owns them (`auth-service`).
 
-Docker is deliberately **not** checked here — start the infra first (`pnpm docker:up`, as the quickstart above does). Nothing replaced that check, so the failure is yours to hit: for a service with migrations, a database that isn't up surfaces as a connection error out of `migrate`; for one that has no `migrate`/`seed` targets yet (`customer-service`, `delivery-service`), there is nothing to fail, and setup will report the service ready with its database down. What is running on your machine is not what preparing a service means.
+Docker is deliberately **not** checked here — start the infrastructure first (`pnpm docker:up`, as the quickstart above does). Nothing replaced that check, so the failure is yours to hit: for a service with migrations, a database that isn't up surfaces as a connection error out of `migrate`; for one that has no `migrate`/`seed` targets yet (`customer-service`, `delivery-service`), there is nothing to fail, and setup will report the service ready with its database down. What is running on your machine is not what preparing a service means.
 
 The mechanics live once in `scripts/lib/setup-common.sh`; each per-service script is a handful of lines that declare _what_ that service needs. `scripts/setup-all.sh` only sequences them, and discovers them from the filesystem — adding `apps/<new-service>/scripts/setup.sh` is all it takes to be picked up by `pnpm setup:all`.
 
@@ -66,7 +66,7 @@ The individual steps remain available on their own (`npx nx run auth-service:mig
 
 Comparing `.env` against `.env.example` is the one part of this that is **not** a check — it only warns. It prints the diff in both directions: keys the template defines that your `.env` lacks (usually the ones that would stop a service booting), and keys your `.env` still defines that the template dropped (leftovers). Keys only — values are never compared, and neither file is ever edited. Nothing fails, nothing later in setup reads a result from it, and nothing is repeated at the end of the run; it is something you see and judge.
 
-A setup script is deliberately **not** a rubber stamp. It fails — non-zero, with the reason — rather than declaring a service ready when it can see something that would stop that service working. Your infrastructure is no longer its business, so what remains is Nx itself, plus the target's own failure: a `migrate` that errors takes the script down with it, since every step runs under `set -e`. Nx being unreadable is fatal, because "this project has no `migrate` target" and "Nx is broken" must not look the same — a broken Nx would otherwise silently skip migrations and still print _ready_. The one soft spot: with no `jq` on `PATH` the target list can't be read at all, and `setup::load_targets` warns and skips rather than failing.
+A setup script is deliberately **not** a rubber stamp. It fails — non-zero, with the reason — rather than declaring a service ready when it can see something that would stop that service working. Your infrastructurestructure is no longer its business, so what remains is Nx itself, plus the target's own failure: a `migrate` that errors takes the script down with it, since every step runs under `set -e`. Nx being unreadable is fatal, because "this project has no `migrate` target" and "Nx is broken" must not look the same — a broken Nx would otherwise silently skip migrations and still print _ready_. The one soft spot: with no `jq` on `PATH` the target list can't be read at all, and `setup::load_targets` warns and skips rather than failing.
 
 ### Database scripts (migrate/seed)
 
@@ -104,18 +104,18 @@ Compose service keys (`auth-db`, `pgbouncer`, ...) are plain, undecorated names 
 | Databases                  | 41000 | auth=41000, customer=41001, delivery=41002, logging=41004 (Mongo), notification=41006 |
 | pgbouncer                  | 41500 | masr3-pgbouncer=41500                                                                 |
 | Messaging                  | 42000 | kafka(host listener)=42000, kafka-ui=42001                                            |
-| DB/infra UI tools          | 43000 | pgadmin=43000, mongo-express=43001, redisinsight=43002                                |
+| DB/infrastructure UI tools          | 43000 | pgadmin=43000, mongo-express=43001, redisinsight=43002                                |
 | Monitoring/tracing         | 44000 | prometheus=44000, grafana=44001, jaeger-ui=44002, jaeger-otlp-http=44003              |
 | Dev-only (`--profile dev`) | 45000 | mailhog-smtp=45000, mailhog-web=45001                                                 |
 
 App services bind directly to their own port on the host when run via `nx serve` (no docker port mapping involved): auth=7000, customer=7001, delivery=7002, logging=7003, user=7004, notification=7005. Each service's `.env` (`AUTH_SERVICE_URL`, etc.) points peers at `http://localhost:<port>/api` accordingly.
 
-### infra/ layout
+### infrastructure/ layout
 
-`infra/` only holds config for tools that aren't owned by any single service — grouped by category, matching the `docker-compose.yaml` section comments:
+`infrastructure/` only holds config for tools that aren't owned by any single service — grouped by category, matching the `docker-compose.yaml` section comments:
 
 ```text
-infra/
+infrastructure/
   pgbouncer/    pgbouncer.ini, userlist.txt
   messaging/    kafka.env
   ui/           pgadmin.env, servers.json, mongo-express.env
@@ -124,19 +124,19 @@ infra/
 
 `provisioning/datasources/` is the one forced exception to "flat" — Grafana itself requires that nested `provisioning/<type>/` shape for anything it auto-loads.
 
-Each Postgres/Mongo service's own DB credentials do **not** live in `infra/` — see below.
+Each Postgres/Mongo service's own DB credentials do **not** live in `infrastructure/` — see below.
 
 ### Env files — one source of truth per credential
 
 - `apps/<service>/.env` — real values, gitignored. Copy from `apps/<service>/.env.example` (committed template) before first run. Holds only what's specific to that service: `PORT`, `DATABASE_HOST`/`DATABASE_PORT` (or `MONGO_HOST`/`MONGO_PORT` for logging-service), and the `*_SERVICE_URL` peer contract below — plus notification-service's `JWT_SECRET` (shared with auth-service, see "Shared auth" above), `MAIL_*` (required, see "Mail" below) and optional `PASSWORD_RESET_URL_BASE`.
-- `apps/<service>/db.env` — that service's database credentials (`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`, or `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD`/`MONGO_INITDB_DATABASE` for logging-service). Lives with the owning service, not under `infra/` — in a "each service owns its own database" microservice layout, the credentials are that service's concern, not shared platform config. The exact same file is loaded by **both** the DB container (`docker-compose.yaml`'s `env_file`) and the app itself when it runs on the host (`ConfigModule`/`data-source.ts` load it directly) — one file, one source of truth, no copy-pasted values to keep in sync.
+- `apps/<service>/db.env` — that service's database credentials (`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`, or `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD`/`MONGO_INITDB_DATABASE` for logging-service). Lives with the owning service, not under `infrastructure/` — in a "each service owns its own database" microservice layout, the credentials are that service's concern, not shared platform config. The exact same file is loaded by **both** the DB container (`docker-compose.yaml`'s `env_file`) and the app itself when it runs on the host (`ConfigModule`/`data-source.ts` load it directly) — one file, one source of truth, no copy-pasted values to keep in sync.
 - Peer-service URLs are **deliberately not** pre-declared. Nothing calls a peer over HTTP yet, so a `*_SERVICE_URL` block would be five static values per service that no code reads and nothing validates — and, being static, they'd drift out of sync with the port convention above with no test to catch it. Add the one URL a real call needs, in the service making the call, when it makes it.
 - `docker-compose.yaml` itself never sets inline `environment:` for app/db services — everything flows through `env_file:`.
-- `mongo-express` is the one unavoidable exception to "one source of truth": it needs its own `ME_CONFIG_MONGODB_ADMIN*` variable names, which can't be an alias of `MONGO_INITDB_ROOT_*` — so `infra/ui/mongo-express.env` repeats the same credential values as `apps/logging-service/db.env` under different names. Keep the two in sync by hand if you change the Mongo password.
+- `mongo-express` is the one unavoidable exception to "one source of truth": it needs its own `ME_CONFIG_MONGODB_ADMIN*` variable names, which can't be an alias of `MONGO_INITDB_ROOT_*` — so `infrastructure/ui/mongo-express.env` repeats the same credential values as `apps/logging-service/db.env` under different names. Keep the two in sync by hand if you change the Mongo password.
 
 ### pgbouncer
 
-Single `masr3-pgbouncer` instance fronts all 5 Postgres containers. `infra/pgbouncer/pgbouncer.ini` maps each service's database name to its own Postgres host in the `[databases]` section. `infra/pgbouncer/userlist.txt` holds **plaintext** passwords with `auth_type = plain` — pgbouncer holds the real password, so it can complete whichever challenge the backend asks for (Postgres 16's default `scram-sha-256`, or `md5`) with no extra server-side configuration, no password re-hashing, and no init scripts. Since app services run on the host, they connect via pgbouncer's host-published port — `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` (each service's committed `.env`) — not the docker-internal `masr3-pgbouncer:6432` address. Pool mode is `transaction`; revisit if your ORM needs session-level features (advisory locks, `LISTEN`/`NOTIFY`, prepared statements).
+Single `masr3-pgbouncer` instance fronts all 5 Postgres containers. `infrastructure/pgbouncer/pgbouncer.ini` maps each service's database name to its own Postgres host in the `[databases]` section. `infrastructure/pgbouncer/userlist.txt` holds **plaintext** passwords with `auth_type = plain` — pgbouncer holds the real password, so it can complete whichever challenge the backend asks for (Postgres 16's default `scram-sha-256`, or `md5`) with no extra server-side configuration, no password re-hashing, and no init scripts. Since app services run on the host, they connect via pgbouncer's host-published port — `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` (each service's committed `.env`) — not the docker-internal `masr3-pgbouncer:6432` address. Pool mode is `transaction`; revisit if your ORM needs session-level features (advisory locks, `LISTEN`/`NOTIFY`, prepared statements).
 
 ### Kafka
 
@@ -159,7 +159,7 @@ Don't "fix" this by advertising `host.docker.internal:42000` instead — that na
 
 Topics are created idempotently (`--create --if-not-exists`) by `npx nx run auth-service:kafka-create-topics`. Its array in `apps/auth-service/scripts/kafka-create-topics.sh` must stay in sync with `AuthKafkaTopic` in `libs/src/lib/messaging/auth.topics.ts`, including a `<topic>.dlq` for every topic this service **consumes** (`auth.user-logged-in.dlq`, `auth.user-register.dlq`, `auth.user-logged-out.dlq`) — producing to a topic needs no `.dlq`; only the session consumer's dead-letter path writes to them (`session-events.consumer.ts`).
 
-`auth-service` and `notification-service` have `kafkajs` wiring. `auth-service` publishes `auth.user-logged-in`, `auth.user-register`, `auth.user-logged-out`, `auth.user-change-password`, and `auth.password-reset-requested`; its `auth-service-sessions` consumer group turns login/register into `sessions` rows and logout into closing them. `notification-service`'s `notification-service-delivery` group consumes `auth.password-reset-requested` and sends the email. The other four services are still infra-only.
+`auth-service` and `notification-service` have `kafkajs` wiring. `auth-service` publishes `auth.user-logged-in`, `auth.user-register`, `auth.user-logged-out`, `auth.user-change-password`, and `auth.password-reset-requested`; its `auth-service-sessions` consumer group turns login/register into `sessions` rows and logout into closing them. `notification-service`'s `notification-service-delivery` group consumes `auth.password-reset-requested` and sends the email. The other four services are still infrastructure-only.
 
 ### Shared auth — making a service accept auth-service's tokens
 
@@ -256,23 +256,23 @@ The reset-token template also persists a _masked_ body (`token=***`), so `GET /a
 
 Because this uses the shared verifier, it checks signature and expiry only — a token revoked in auth-service stays valid here until it expires (see "Shared auth" above).
 
-### DB / infra UI tools
+### DB / infrastructure UI tools
 
-- **pgAdmin** (`:43000`) — all 4 Postgres connections are pre-registered via `infra/ui/servers.json`; you'll still be asked for the password once per session.
-- **mongo-express** (`:43001`) — pre-configured against `masr3-logging-db` via `infra/ui/mongo-express.env`.
+- **pgAdmin** (`:43000`) — all 4 Postgres connections are pre-registered via `infrastructure/ui/servers.json`; you'll still be asked for the password once per session.
+- **mongo-express** (`:43001`) — pre-configured against `masr3-logging-db` via `infrastructure/ui/mongo-express.env`.
 - **RedisInsight** (`:43002`) — no reliable non-interactive provisioning; add the `masr3-redis:6379` connection by hand on first visit.
 
 ### Monitoring & tracing
 
 - **Prometheus** (`:44000`) scrapes only itself for now — no service exposes `/metrics` yet, only `/api/health`.
-- **Grafana** (`:44001`) auto-provisions the Prometheus datasource via `infra/monitoring/provisioning/datasources/datasource.yml`.
-- **Jaeger** (`:44002` UI, `:44003` OTLP HTTP) — `jaegertracing/all-in-one`, in-memory storage. No service emits traces yet (no OpenTelemetry SDK wired); infra is ready for when that's added.
+- **Grafana** (`:44001`) auto-provisions the Prometheus datasource via `infrastructure/monitoring/provisioning/datasources/datasource.yml`.
+- **Jaeger** (`:44002` UI, `:44003` OTLP HTTP) — `jaegertracing/all-in-one`, in-memory storage. No service emits traces yet (no OpenTelemetry SDK wired); infrastructure is ready for when that's added.
 
 ### App services run on the host
 
-**What:** `auth-service`/`customer-service`/`delivery-service`/`logging-service`/`notification-service`/`user-service` are never run as docker containers — `docker-compose.yaml` only ever holds infra (DBs, pgbouncer, kafka, UI tools, monitoring). Run a service with `npx nx serve auth-service`, or all of them with `pnpm dev:all`.
+**What:** `auth-service`/`customer-service`/`delivery-service`/`logging-service`/`notification-service`/`user-service` are never run as docker containers — `docker-compose.yaml` only ever holds infrastructure (DBs, pgbouncer, kafka, UI tools, monitoring). Run a service with `npx nx serve auth-service`, or all of them with `pnpm dev:all`.
 
-**Why:** running the app on the host gets Nx's webpack watch/HMR for free — edit-and-see-it-immediately, no image rebuild step. A docker container for the app would need a bind mount plus an anonymous volume for `node_modules` to get the same live-reload experience, for no real benefit over just running it on the host directly, since the app already talks to dockerized infra over `localhost` either way.
+**Why:** running the app on the host gets Nx's webpack watch/HMR for free — edit-and-see-it-immediately, no image rebuild step. A docker container for the app would need a bind mount plus an anonymous volume for `node_modules` to get the same live-reload experience, for no real benefit over just running it on the host directly, since the app already talks to dockerized infrastructure over `localhost` either way.
 
 **How:** each service's committed `.env` points at every dependency's _host-published_ port — pgbouncer at `localhost:41500`, Kafka at `localhost:42000`, peer services at their own `localhost:<port>` — never a docker-internal hostname like `masr3-pgbouncer`. That's what makes this work with zero per-developer configuration: the same `.env` is correct whether you're running one service or all of them, because everything (app included) talks to everything else over `localhost`.
 
@@ -280,7 +280,7 @@ Because this uses the shared verifier, it checks signature and expiry only — a
 
 ### Healthchecks
 
-Every infra container has a `HEALTHCHECK`/compose healthcheck: `pg_isready` per Postgres, `mongosh` ping for Mongo, `redis-cli ping` for Redis, a broker API-versions check for Kafka, a TCP check for pgbouncer. Docker isn't waiting on app services (there aren't any); app-level health is `GET /api/health` on whichever service you've started with `nx serve`.
+Every infrastructure container has a `HEALTHCHECK`/compose healthcheck: `pg_isready` per Postgres, `mongosh` ping for Mongo, `redis-cli ping` for Redis, a broker API-versions check for Kafka, a TCP check for pgbouncer. Docker isn't waiting on app services (there aren't any); app-level health is `GET /api/health` on whichever service you've started with `nx serve`.
 
 [Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/nest?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
 

@@ -52,6 +52,38 @@
       "options": {
         "passWithNoTests": true
       }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json typeorm-ts-node-commonjs migration:run -d apps/auth-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "if [ -z \"{args.name}\" ]; then echo 'Error: migration name is required. Usage: nx run auth-service:migrate-generate --name=CreateUsers'; exit 1; fi; TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json typeorm-ts-node-commonjs migration:generate apps/auth-service/src/database/migrations/{args.name} -d apps/auth-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-revert": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json typeorm-ts-node-commonjs migration:revert -d apps/auth-service/src/database/data-source.ts"
+      }
+    },
+    "migration-show": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json typeorm-ts-node-commonjs migration:show -d apps/auth-service/src/database/data-source.ts"
+      }
+    },
+    "seed": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["migrate"],
+      "outputStyle": "static",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/database/seeds/seed-users.ts"
+      }
     }
   }
 }
