@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "auth-db",
+      "Group": "masr3",
+      "Host": "masr3-auth-db",
+      "Port": 5432,
+      "MaintenanceDB": "auth_db",
+      "Username": "auth",
+      "SSLMode": "prefer"
+    }
+  }
+}

@@ -1,0 +1,83 @@
+name: masr3
+
+# Port convention (host-published only; container-internal ports keep image defaults):
+#   41000-41099  databases (postgres/mongo/redis)   42000-42099  messaging (kafka/kafka-ui)
+#   41500        pgbouncer                          43000-43099  db/infra ui tools
+#   44000-44099  monitoring/tracing                 45000-45099  dev-only tools (profile: dev)
+#
+# Infra only — no app services here.
+
+services:
+  # ========================================
+  # Databases
+  # ========================================
+
+  auth-db:
+    image: postgres:16-alpine
+    container_name: masr3-auth-db
+    restart: unless-stopped
+    env_file: apps/auth-service/db.env
+    ports:
+      - '41000:5432'
+    volumes:
+      - masr3_auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - masr3-network
+
+  # ========================================
+  # pgbouncer (fronts all 4 postgres instances)
+  # ========================================
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: masr3-pgbouncer
+    restart: unless-stopped
+    ports:
+      - '41500:6432'
+    volumes:
+      - ./infra/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./infra/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'nc -z 127.0.0.1 6432 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+    networks:
+      - masr3-network
+
+  # ========================================
+  # DB / infra UI tools
+  # ========================================
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: masr3-pgadmin
+    restart: unless-stopped
+    env_file: infra/ui/pgadmin.env
+    ports:
+      - '43000:80'
+    volumes:
+      - masr3_pgadmin_data:/var/lib/pgadmin
+      - ./infra/ui/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+    networks:
+      - masr3-network
+
+volumes:
+  masr3_auth_db_data:
+
+networks:
+  masr3-network:
+    driver: bridge
