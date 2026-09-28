@@ -6,6 +6,7 @@ import AppConfigModule from '../config/config.module';
 import DatabaseModule from '../database/database.module';
 import AuthModule from '../modules/auth/auth.module';
 import UsersModule from '../modules/users/users.module';
+import JwtAuthGuard from '../modules/auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -16,6 +17,9 @@ import UsersModule from '../modules/users/users.module';
     UsersModule,
   ],
   controllers: [],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export default class AppModule {}

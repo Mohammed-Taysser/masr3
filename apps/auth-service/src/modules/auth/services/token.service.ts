@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 
@@ -7,7 +8,10 @@ import { JwtPayload } from '../auth.interface';
 
 @Injectable()
 class TokenService {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
 
   generateTokens(user: UserEntity) {
     const payload: JwtPayload = {
@@ -17,26 +21,25 @@ class TokenService {
       tokenVersion: user.tokenVersion,
     };
 
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user,
-    };
+    return this.jwtService.sign(payload)
   }
 
-  generateResetToken(): string {
-    return randomBytes(32).toString('hex');
+  createResetToken(): { token: string; tokenHash: string } {
+    const token = randomBytes(32).toString('hex');
+
+    return { token, tokenHash: this.hashToken(token) };
   }
 
-  hashResetToken(token: string): string {
+  hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
 
   getResetTokenExpiry(): Date {
-    const expiresAt = new Date();
+    const ttlMs = this.configService.getOrThrow<number>(
+      'PASSWORD_RESET_TOKEN_TTL_MS',
+    );
 
-    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
-
-    return expiresAt;
+    return new Date(Date.now() + ttlMs);
   }
 }
 

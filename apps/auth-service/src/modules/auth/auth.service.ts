@@ -1,28 +1,32 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 
-import RegisterDto from './dto/register.dto';
-import LoginDto from './dto/login.dto';
-import ResetPasswordDto from './dto/reset-password.dto';
 import ChangePasswordDto from './dto/change-password.dto';
 import ForgotPasswordDto from './dto/forgot-password.dto';
+import LoginDto from './dto/login.dto';
+import RegisterDto from './dto/register.dto';
+import ResetPasswordDto from './dto/reset-password.dto';
 
 import UsersService from '../users/users.service';
+import AuthResponseDto from './dto/auth-response.dto';
 import PasswordService from './services/password.service';
 import TokenService from './services/token.service';
 
 @Injectable()
 class AuthService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto): Promise<AuthResponseDto> {
     const existingUser = await this.usersService.findByEmail(dto.email);
 
     if (existingUser) {
@@ -36,10 +40,15 @@ class AuthService {
       password: hashedPassword,
     });
 
-    return this.tokenService.generateTokens(user);
+    const accessToken = this.tokenService.generateTokens(user);
+
+    return {
+      accessToken,
+      user,
+    };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto): Promise<AuthResponseDto> {
     const user = await this.usersService.findByEmail(dto.email);
 
     if (!user) {
@@ -63,11 +72,16 @@ class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return this.tokenService.generateTokens(userWithPassword);
+    const accessToken = this.tokenService.generateTokens(user);
+
+    return {
+      accessToken,
+      user,
+    };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const tokenHash = this.tokenService.hashResetToken(dto.token);
+    const tokenHash = this.tokenService.hashToken(dto.token);
 
     const user = await this.usersService.findByValidResetToken(tokenHash);
 
@@ -94,13 +108,14 @@ class AuthService {
       };
     }
 
-    const resetToken = this.tokenService.generateResetToken();
-    const tokenHash = this.tokenService.hashResetToken(resetToken);
+    const { tokenHash, token } = this.tokenService.createResetToken();
 
     await this.usersService.setPasswordResetToken(user.id, {
       tokenHash,
       expiresAt: this.tokenService.getResetTokenExpiry(),
     });
+
+    this.logger.log(`forgetPassword: ${token}`);
 
     return {
       message:

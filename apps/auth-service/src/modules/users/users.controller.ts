@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  SerializeOptions,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,24 +23,28 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import UsersService from './users.service';
-import CreateUserDto from './dto/create-user.dto';
-import UpdateUserDto from './dto/update-user.dto';
-import UpdateUserStatusDto from './dto/update-user-status.dto';
-import ListUsersQueryDto from './dto/list-users-query.dto';
-import { UserRoleEnum } from './users.enum';
 import { Roles } from '../auth/decorators/roles.decorator';
-import JwtAuthGuard from '../auth/guards/jwt-auth.guard';
 import RolesGuard from '../auth/guards/roles.guard';
+import CreateUserDto from './dto/create-user.dto';
+import ListUsersQueryDto from './dto/list-users-query.dto';
+import PaginatedUsersResponseDto from './dto/paginated-users-response.dto';
+import UpdateUserStatusDto from './dto/update-user-status.dto';
+import UpdateUserDto from './dto/update-user.dto';
+import UserResponseDto from './dto/user-response.dto';
+import { UserRoleEnum } from './users.enum';
+import UsersService from './users.service';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(RolesGuard)
+@Roles(UserRoleEnum.ADMIN)
 @Controller('users')
 class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.CUSTOMER, UserRoleEnum.RIDER)
+  @SerializeOptions({ type: PaginatedUsersResponseDto })
   @ApiOperation({
     summary: 'List users',
     description:
@@ -53,6 +58,7 @@ class UsersController {
   }
 
   @Get(':id')
+  @SerializeOptions({ type: UserResponseDto })
   @ApiOperation({
     summary: 'Get user by id',
     description: 'Returns a single user by their id.',
@@ -71,6 +77,7 @@ class UsersController {
   }
 
   @Post()
+  @SerializeOptions({ type: UserResponseDto })
   @ApiOperation({
     summary: 'Create a user',
     description: 'Creates a new user account.',
@@ -83,6 +90,7 @@ class UsersController {
   }
 
   @Patch(':id')
+  @SerializeOptions({ type: UserResponseDto })
   @ApiOperation({
     summary: 'Update a user',
     description: 'Partially updates a user account.',
@@ -105,8 +113,6 @@ class UsersController {
 
   @Patch(':id/status')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @UseGuards(RolesGuard)
-  @Roles(UserRoleEnum.ADMIN)
   @ApiOperation({
     summary: 'Activate or deactivate an account',
     description:
@@ -129,6 +135,7 @@ class UsersController {
   }
 
   @Delete(':id')
+  @SerializeOptions({ type: UserResponseDto })
   @ApiOperation({
     summary: 'Delete a user',
     description:

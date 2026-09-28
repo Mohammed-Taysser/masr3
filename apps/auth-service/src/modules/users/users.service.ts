@@ -172,7 +172,7 @@ class UsersService {
         password: hashedPassword,
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
-        tokenVersion: () => 'token_version + 1',
+        tokenVersion: () => 'tokenVersion + 1',
       },
     );
 
@@ -186,7 +186,7 @@ class UsersService {
       { id },
       {
         password: hashedPassword,
-        tokenVersion: () => 'token_version + 1',
+        tokenVersion: () => 'tokenVersion + 1',
       },
     );
 

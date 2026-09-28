@@ -33,15 +33,7 @@ describe('AuthService', () => {
     isActive: true,
   } as UserEntity;
 
-  const userWithoutPassword = {
-    ...user,
-    password: undefined,
-  } as unknown as UserEntity;
-
-  const accessTokenResponse = {
-    accessToken: 'access-token',
-    user: userWithoutPassword,
-  };
+  const accessToken = 'access-token';
 
   beforeEach(() => {
     usersService = {
@@ -63,8 +55,8 @@ describe('AuthService', () => {
 
     tokenService = {
       generateTokens: jest.fn(),
-      generateResetToken: jest.fn(),
-      hashResetToken: jest.fn(),
+      createResetToken: jest.fn(),
+      hashToken: jest.fn(),
       getResetTokenExpiry: jest.fn(),
     } as unknown as jest.Mocked<TokenService>;
 
@@ -94,7 +86,7 @@ describe('AuthService', () => {
 
       usersService.create.mockResolvedValue(user);
 
-      tokenService.generateTokens.mockReturnValue(accessTokenResponse);
+      tokenService.generateTokens.mockReturnValue(accessToken);
 
       const result = await service.register(dto);
 
@@ -109,7 +101,7 @@ describe('AuthService', () => {
 
       expect(tokenService.generateTokens).toHaveBeenCalledWith(user);
 
-      expect(result).toBe(accessTokenResponse);
+      expect(result).toEqual({ accessToken, user });
     });
 
     it('throws ConflictException when email already exists', async () => {
@@ -138,7 +130,7 @@ describe('AuthService', () => {
 
       passwordService.compare.mockResolvedValue(true);
 
-      tokenService.generateTokens.mockReturnValue(accessTokenResponse);
+      tokenService.generateTokens.mockReturnValue(accessToken);
 
       const result = await service.login(dto);
 
@@ -155,7 +147,7 @@ describe('AuthService', () => {
 
       expect(tokenService.generateTokens).toHaveBeenCalledWith(user);
 
-      expect(result).toBe(accessTokenResponse);
+      expect(result).toEqual({ accessToken, user });
     });
 
     it('throws UnauthorizedException when email does not exist', async () => {
@@ -208,7 +200,7 @@ describe('AuthService', () => {
     };
 
     it('resets the password using a valid reset token', async () => {
-      tokenService.hashResetToken.mockReturnValue('hashed-reset-token');
+      tokenService.hashToken.mockReturnValue('hashed-reset-token');
 
       usersService.findByValidResetToken.mockResolvedValue(user);
 
@@ -218,7 +210,7 @@ describe('AuthService', () => {
 
       const result = await service.resetPassword(dto);
 
-      expect(tokenService.hashResetToken).toHaveBeenCalledWith(
+      expect(tokenService.hashToken).toHaveBeenCalledWith(
         dto.token,
       );
 
@@ -241,7 +233,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException when reset token is invalid or expired', async () => {
-      tokenService.hashResetToken.mockReturnValue('hashed-reset-token');
+      tokenService.hashToken.mockReturnValue('hashed-reset-token');
 
       usersService.findByValidResetToken.mockResolvedValue(null);
 
@@ -264,9 +256,10 @@ describe('AuthService', () => {
 
       usersService.findByEmail.mockResolvedValue(user);
 
-      tokenService.generateResetToken.mockReturnValue('raw-reset-token');
-
-      tokenService.hashResetToken.mockReturnValue('hashed-reset-token');
+      tokenService.createResetToken.mockReturnValue({
+        token: 'raw-reset-token',
+        tokenHash: 'hashed-reset-token',
+      });
 
       tokenService.getResetTokenExpiry.mockReturnValue(expiresAt);
 
@@ -278,11 +271,7 @@ describe('AuthService', () => {
         dto.email,
       );
 
-      expect(tokenService.generateResetToken).toHaveBeenCalled();
-
-      expect(tokenService.hashResetToken).toHaveBeenCalledWith(
-        'raw-reset-token',
-      );
+      expect(tokenService.createResetToken).toHaveBeenCalled();
 
       expect(tokenService.getResetTokenExpiry).toHaveBeenCalled();
 
@@ -310,8 +299,7 @@ describe('AuthService', () => {
           'If an account exists with this email, password reset instructions have been sent.',
       });
 
-      expect(tokenService.generateResetToken).not.toHaveBeenCalled();
-      expect(tokenService.hashResetToken).not.toHaveBeenCalled();
+      expect(tokenService.createResetToken).not.toHaveBeenCalled();
       expect(usersService.setPasswordResetToken).not.toHaveBeenCalled();
     });
   });

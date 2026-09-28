@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash } from 'crypto';
 
@@ -8,6 +9,7 @@ import { UserRoleEnum } from '../../users/users.enum';
 describe('TokenService', () => {
   let service: TokenService;
   let jwtService: jest.Mocked<JwtService>;
+  let configService: jest.Mocked<ConfigService>;
 
   const user = {
     id: 1,
@@ -21,7 +23,11 @@ describe('TokenService', () => {
       sign: jest.fn(),
     } as unknown as jest.Mocked<JwtService>;
 
-    service = new TokenService(jwtService);
+    configService = {
+      getOrThrow: jest.fn().mockReturnValue(600000),
+    } as unknown as jest.Mocked<ConfigService>;
+
+    service = new TokenService(jwtService, configService);
   });
 
   afterEach(() => {
@@ -42,62 +48,88 @@ describe('TokenService', () => {
       });
     });
 
-    it('returns the signed access token alongside the user', () => {
+    it('returns the signed access token', () => {
       jwtService.sign.mockReturnValue('signed-token');
 
       const result = service.generateTokens(user);
 
-      expect(result).toEqual({
-        accessToken: 'signed-token',
-        user,
-      });
+      expect(result).toBe('signed-token');
     });
   });
 
-  describe('generateResetToken', () => {
-    it('returns a 64-character hex string', () => {
-      const token = service.generateResetToken();
+  describe('createResetToken', () => {
+    it('returns a 64-character hex token', () => {
+      const { token } = service.createResetToken();
 
       expect(token).toMatch(/^[a-f0-9]{64}$/);
     });
 
     it('returns a different token on each call', () => {
-      const first = service.generateResetToken();
-      const second = service.generateResetToken();
+      const first = service.createResetToken().token;
+      const second = service.createResetToken().token;
 
       expect(first).not.toBe(second);
     });
+
+    it('returns the sha256 hash of the token it generated', () => {
+      const { token, tokenHash } = service.createResetToken();
+
+      expect(tokenHash).toBe(
+        createHash('sha256').update(token).digest('hex'),
+      );
+    });
+
+    it('does not return the raw token as the hash', () => {
+      const { token, tokenHash } = service.createResetToken();
+
+      expect(tokenHash).not.toBe(token);
+    });
   });
 
-  describe('hashResetToken', () => {
+  describe('hashToken', () => {
     it('returns the sha256 hex digest of the input', () => {
       const expected = createHash('sha256')
         .update('raw-token')
         .digest('hex');
 
-      expect(service.hashResetToken('raw-token')).toBe(expected);
+      expect(service.hashToken('raw-token')).toBe(expected);
     });
 
     it('produces the same hash for the same input', () => {
-      expect(service.hashResetToken('same')).toBe(
-        service.hashResetToken('same'),
+      expect(service.hashToken('same')).toBe(
+        service.hashToken('same'),
       );
     });
 
     it('produces different hashes for different input', () => {
-      expect(service.hashResetToken('a')).not.toBe(
-        service.hashResetToken('b'),
+      expect(service.hashToken('a')).not.toBe(
+        service.hashToken('b'),
       );
     });
   });
 
   describe('getResetTokenExpiry', () => {
-    it('returns a date 15 minutes in the future', () => {
+    it('returns a date PASSWORD_RESET_TOKEN_TTL_MS in the future', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+      configService.getOrThrow.mockReturnValue(600000);
 
       const expiresAt = service.getResetTokenExpiry();
 
-      expect(expiresAt).toEqual(new Date('2026-09-22T12:15:00.000Z'));
+      expect(configService.getOrThrow).toHaveBeenCalledWith(
+        'PASSWORD_RESET_TOKEN_TTL_MS',
+      );
+      expect(expiresAt).toEqual(new Date('2026-09-22T12:10:00.000Z'));
+
+      jest.useRealTimers();
+    });
+
+    it('follows the configured ttl', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
+      configService.getOrThrow.mockReturnValue(3600000);
+
+      expect(service.getResetTokenExpiry()).toEqual(
+        new Date('2026-09-22T13:00:00.000Z'),
+      );
 
       jest.useRealTimers();
     });

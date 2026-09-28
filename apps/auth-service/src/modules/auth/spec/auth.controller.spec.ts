@@ -139,12 +139,9 @@ describe('AuthController', () => {
         },
       } as any;
 
-      const result = await controller.changePassword(request);
+      const result = await controller.changePassword(request, dto);
 
-      expect(authService.changePassword).toHaveBeenCalledWith(
-        userId,
-        request.body,
-      );
+      expect(authService.changePassword).toHaveBeenCalledWith(userId, dto);
 
       expect(result).toBe(response);
     });

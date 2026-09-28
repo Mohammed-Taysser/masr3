@@ -133,13 +133,24 @@ describe('ListUsersQueryDto', () => {
       expect(dto.isActive).toBe(false);
     });
 
-    it('transforms the value using @Type(() => Boolean)', async () => {
+    it('parses the query string "true"', async () => {
       const dto = createDto({
         isActive: 'true',
       });
 
-      expect(typeof dto.isActive).toBe('boolean');
       expect(dto.isActive).toBe(true);
+
+      const errors = await validate(dto);
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it('parses the query string "false"', async () => {
+      const dto = createDto({
+        isActive: 'false',
+      });
+
+      expect(dto.isActive).toBe(false);
 
       const errors = await validate(dto);
 

@@ -43,3 +43,9 @@ Thumbs.db
 .nx/migrate-runs
 .claude/worktrees
 .claude/settings.local.json
+
+# Per-service real env values. `db.env` and `.env.example` ARE committed;
+# `.env` holds local secrets and must not be.
+.env
+!.env.example
+!db.env

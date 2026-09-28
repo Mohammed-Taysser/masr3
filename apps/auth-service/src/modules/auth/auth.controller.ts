@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Post,
   Req,
+  SerializeOptions,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,8 +25,7 @@ import ForgotPasswordDto from './dto/forgot-password.dto';
 import LoginDto from './dto/login.dto';
 import RegisterDto from './dto/register.dto';
 import ResetPasswordDto from './dto/reset-password.dto';
-import JwtAuthGuard from './guards/jwt-auth.guard';
-import { UseGuards } from '@nestjs/common';
+import { Public } from './decorators/public.decorator';
 import UserResponseDto from '../users/dto/user-response.dto';
 
 @ApiTags('Auth')
@@ -34,6 +34,8 @@ class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Public()
+  @SerializeOptions({ type: AuthResponseDto })
   @Throttle({ long: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: 'Create an account and sign in',
@@ -49,6 +51,8 @@ class AuthController {
   }
 
   @Post('login')
+  @Public()
+  @SerializeOptions({ type: AuthResponseDto })
   @HttpCode(HttpStatus.OK)
   @Throttle({ long: { limit: 10, ttl: 60000 } })
   @ApiOperation({
@@ -65,7 +69,8 @@ class AuthController {
   }
 
   @Post('forgot-password')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
+  @HttpCode(HttpStatus.OK)
   @Throttle({ long: { limit: 3, ttl: 60000 } })
   @ApiOperation({
     summary: 'Request a password reset',
@@ -81,6 +86,7 @@ class AuthController {
   }
 
   @Post('reset-password')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @Throttle({ long: { limit: 5, ttl: 60000 } })
   @ApiOperation({
@@ -97,7 +103,6 @@ class AuthController {
 
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Change the authenticated user password',
@@ -107,14 +112,14 @@ class AuthController {
   @ApiOkResponse({
     description: 'Password changed successfully.',
   })
-  changePassword(@Req() request: Request) {
+  changePassword(@Req() request: Request, @Body() dto: ChangePasswordDto) {
     const userId = request.user.id;
 
-    return this.authService.changePassword(userId, request.body);
+    return this.authService.changePassword(userId, dto);
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @SerializeOptions({ type: UserResponseDto })
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get the authenticated user',
@@ -128,7 +133,6 @@ class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Log out',

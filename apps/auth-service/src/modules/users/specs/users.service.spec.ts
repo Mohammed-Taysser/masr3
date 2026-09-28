@@ -687,14 +687,22 @@ describe('UsersService', () => {
 
       await service.resetPassword(1, 'new-hashed-password');
 
-      expect(repository.update).toHaveBeenCalledWith(
-        { id: 1 },
-        {
-          password: 'new-hashed-password',
-          passwordResetTokenHash: null,
-          passwordResetExpiresAt: null,
-          tokenVersion: () => 'token_version + 1',
-        },
+      const [criteria, payload] = repository.update.mock.calls[0] as [
+        unknown,
+        Record<string, unknown>,
+      ];
+
+      expect(criteria).toEqual({ id: 1 });
+
+      expect(payload).toEqual({
+        password: 'new-hashed-password',
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+        tokenVersion: expect.any(Function),
+      });
+
+      expect((payload.tokenVersion as () => string)()).toBe(
+        'tokenVersion + 1',
       );
     });
 
@@ -717,12 +725,20 @@ describe('UsersService', () => {
 
       await service.changePassword(1, 'new-hashed-password');
 
-      expect(repository.update).toHaveBeenCalledWith(
-        { id: 1 },
-        {
-          password: 'new-hashed-password',
-          tokenVersion: () => 'token_version + 1',
-        },
+      const [criteria, payload] = repository.update.mock.calls[0] as [
+        unknown,
+        Record<string, unknown>,
+      ];
+
+      expect(criteria).toEqual({ id: 1 });
+
+      expect(payload).toEqual({
+        password: 'new-hashed-password',
+        tokenVersion: expect.any(Function),
+      });
+
+      expect((payload.tokenVersion as () => string)()).toBe(
+        'tokenVersion + 1',
       );
     });
 
