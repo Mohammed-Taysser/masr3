@@ -42,7 +42,10 @@
       "options": {
         "targetName": "test"
       },
-      "exclude": ["apps/auth-service-e2e/**/*"]
+      "exclude": [
+        "apps/auth-service-e2e/**/*",
+        "apps/notification-service-e2e/**/*"
+      ]
     }
   ]
 }

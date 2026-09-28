@@ -215,13 +215,32 @@ describe('UsersController', () => {
   });
 
   describe('guards', () => {
-    it('restricts updateStatus to admins', () => {
-      const metadata = Reflect.getMetadata(
+    it('defaults the whole controller to admins', () => {
+      expect(Reflect.getMetadata(ROLES_KEY, UsersController)).toEqual([
+        UserRoleEnum.ADMIN,
+      ]);
+    });
+
+    it('opens findAll to every role', () => {
+      const roles: UserRoleEnum[] = Reflect.getMetadata(
         ROLES_KEY,
-        UsersController.prototype.updateStatus,
+        UsersController.prototype.findAll,
       );
 
-      expect(metadata).toEqual([UserRoleEnum.ADMIN]);
+      // order is irrelevant, coverage is not
+      expect([...roles].sort()).toEqual(Object.values(UserRoleEnum).sort());
+    });
+
+    it.each([
+      'findById',
+      'create',
+      'update',
+      'updateStatus',
+      'remove',
+    ] as const)('leaves %s on the admin-only default', (method) => {
+      expect(
+        Reflect.getMetadata(ROLES_KEY, UsersController.prototype[method]),
+      ).toBeUndefined();
     });
   });
 
