@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs, Public } from '@masr3/libs';
 
 @ApiTags('Health')
 @Controller('health')
@@ -10,6 +10,7 @@ class HealthController {
   constructor(private readonly configService: ConfigService) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'Liveness check' })
   @ApiOkResponse({
     schema: { example: { status: 'ok', service: 'trip-service' } },

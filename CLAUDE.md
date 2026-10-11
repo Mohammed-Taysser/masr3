@@ -163,11 +163,20 @@ apps/<svc>/
   `excludeExtraneousValues: true`, a bare entity serialises to `{}`.
 - **Swagger:** document every route with `@ApiTags`, `@ApiOperation({ summary, description })`
   and its responses.
-- **Auth:** for auth-service, use the global `JwtAuthGuard` + `RolesGuard`, with `@Public()` and
-  `@Roles(...)`.
-  - Service-to-service auth is **not built yet**; a separate plan covers it. Do not add
-    unguarded business endpoints to other services.
+- **Auth:** every service registers `AuthenticationModule.register()` and
+  `{ provide: APP_GUARD, useExisting: AuthenticationGuard }` from `@masr3/libs` (after its
+  throttler). The guard is closed by default. Guide: `docs/authentication.md`.
+  - `@Roles(...)` for user routes, `@CurrentUser()` for the principal. Roles are enforced inside
+    the guard; there is no separate `RolesGuard`.
+  - Service-only routes live under `/internal/...` with class-level `@RequireServiceScopes(...)`.
+    Never combine it, or `@Public()`, with `@Roles()`.
+  - `@Public()` only skips the guard: `/auth/refresh` and `/service-tokens` authenticate in their
+    handler.
+  - Call another service through a typed client using `ServiceTokenProvider`, never raw axios in
+    business code. New callers go in `SERVICE_CLIENTS` with their own secret env variable.
   - `/api/health` is always public.
+- **Logging:** never log tokens, secrets, cookies or `Authorization` headers. Any future HTTP or
+  exception logging must redact them, including login, refresh and service-token bodies.
 
 ## Kafka
 
@@ -236,4 +245,4 @@ apps/<svc>/
 - Commit messages use the `feat:` / `refactor:` / `chore:` prefixes. Commit only when asked, and
   keep unrelated changes (e.g. an auth-service rename) in their own commit.
 - Park large in-progress work as a commit on a `wip/*` branch, not `git stash`.
-  `wip/full-implementation` holds the parked internal-auth / Swagger-helpers / SASL work.
+  `wip/full-implementation` is old test code, not a real implementation: never copy from it.

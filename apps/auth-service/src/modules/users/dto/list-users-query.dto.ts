@@ -9,7 +9,9 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { SortOrder, UserRoleEnum, UserSortBy } from '../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
+
+import { SortOrder, UserSortBy } from '../users.enum';
 
 class ListUsersQueryDto {
   @ApiPropertyOptional({

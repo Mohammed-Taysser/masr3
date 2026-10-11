@@ -72,9 +72,7 @@ describe('RegisterDto', () => {
         }),
       );
 
-      expect(errors.some((error) => error.property === 'password')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'password')).toBe(true);
     });
 
     it('rejects a non-string password', async () => {
@@ -84,9 +82,7 @@ describe('RegisterDto', () => {
         }),
       );
 
-      expect(errors.some((error) => error.property === 'password')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'password')).toBe(true);
     });
   });
 
@@ -108,9 +104,7 @@ describe('RegisterDto', () => {
         }),
       );
 
-      expect(errors.some((error) => error.property === 'firstName')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'firstName')).toBe(true);
     });
   });
 
@@ -132,9 +126,7 @@ describe('RegisterDto', () => {
         }),
       );
 
-      expect(errors.some((error) => error.property === 'lastName')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'lastName')).toBe(true);
     });
   });
 });

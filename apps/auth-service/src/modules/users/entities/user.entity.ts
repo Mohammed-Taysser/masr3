@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { UserRoleEnum } from '../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 import { Exclude } from 'class-transformer';
 
 @Entity('users')

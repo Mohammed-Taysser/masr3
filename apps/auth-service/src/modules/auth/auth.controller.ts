@@ -18,14 +18,17 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 
+import { Public } from '@masr3/libs';
+
 import AuthService from './auth.service';
+import AccessTokenResponseDto from './dto/access-token-response.dto';
 import AuthResponseDto from './dto/auth-response.dto';
 import ChangePasswordDto from './dto/change-password.dto';
 import ForgotPasswordDto from './dto/forgot-password.dto';
 import LoginDto from './dto/login.dto';
+import RefreshTokenDto from './dto/refresh-token.dto';
 import RegisterDto from './dto/register.dto';
 import ResetPasswordDto from './dto/reset-password.dto';
-import { Public } from './decorators/public.decorator';
 import UserResponseDto from '../users/dto/user-response.dto';
 
 @ApiTags('Auth')
@@ -40,7 +43,7 @@ class AuthController {
   @ApiOperation({
     summary: 'Create an account and sign in',
     description:
-      'Creates the user and returns a valid access token. The account is immediately usable; email verification is not implemented yet.',
+      'Creates the user and returns an access token (5 minutes) and a refresh token (7 days). The account is immediately usable; email verification is not implemented yet.',
   })
   @ApiCreatedResponse({
     type: AuthResponseDto,
@@ -58,7 +61,7 @@ class AuthController {
   @ApiOperation({
     summary: 'Sign in',
     description:
-      'Authenticates a user using email and password and returns an access token.',
+      'Authenticates a user using email and password and returns an access token (5 minutes) and a refresh token (7 days).',
   })
   @ApiOkResponse({
     type: AuthResponseDto,
@@ -66,6 +69,26 @@ class AuthController {
   })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  // Public only skips the bearer guard: the handler verifies the refresh token
+  // in the body (signature, issuer, audience, expiry, claims, tokenVersion).
+  @Public()
+  @SerializeOptions({ type: AccessTokenResponseDto })
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ long: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Get a new access token',
+    description:
+      'Exchanges a valid refresh token for a new 5-minute access token built from the current account data. The refresh token itself is not extended or replaced; once it expires the user must sign in again. Access and service tokens are rejected.',
+  })
+  @ApiOkResponse({
+    type: AccessTokenResponseDto,
+    description: 'New access token issued.',
+  })
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto);
   }
 
   @Post('forgot-password')
@@ -92,7 +115,7 @@ class AuthController {
   @ApiOperation({
     summary: 'Reset password',
     description:
-      'Resets the password using a valid password-reset token. Existing access tokens are revoked.',
+      'Resets the password using a valid password-reset token. Every refresh token is revoked; access tokens stop working on auth-service at once and on other services within 5 minutes.',
   })
   @ApiOkResponse({
     description: 'Password reset successfully.',
@@ -107,7 +130,7 @@ class AuthController {
   @ApiOperation({
     summary: 'Change the authenticated user password',
     description:
-      'Changes the current password. All existing access tokens are revoked and the user must authenticate again.',
+      'Changes the current password. Every refresh token is revoked; access tokens stop working on auth-service at once and on other services within 5 minutes.',
   })
   @ApiOkResponse({
     description: 'Password changed successfully.',
@@ -137,7 +160,7 @@ class AuthController {
   @ApiOperation({
     summary: 'Log out',
     description:
-      'Increments the account token version, invalidating existing access tokens.',
+      'Increments the account token version. Every refresh token of the user, on every device, is revoked; access tokens stop working on auth-service at once and on other services within 5 minutes.',
   })
   @ApiOkResponse({
     description: 'Logged out successfully.',

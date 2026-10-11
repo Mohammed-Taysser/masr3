@@ -4,12 +4,16 @@ import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MinLength,
   validateSync,
 } from 'class-validator';
+
+import { SERVICE_CLIENT_SECRET_PATTERN } from '@masr3/libs';
 
 enum EnvironmentEnum {
   DEVELOPMENT = 'development',
@@ -52,12 +56,29 @@ class EnvironmentVariables {
   POSTGRES_DB: string;
 
   @IsString()
-  @MinLength(32)
-  JWT_SECRET: string;
+  @MinLength(1)
+  JWT_PRIVATE_KEY_FILE: string;
 
+  // Set only during a key rotation, to keep verifying the old key's tokens.
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  JWT_EXPIRES_IN: string;
+  JWT_PREVIOUS_PUBLIC_KEY_FILE?: string;
+
+  @IsInt()
+  @Min(60)
+  ACCESS_TOKEN_EXPIRES_IN_SECONDS: number;
+
+  @IsInt()
+  @Min(3600)
+  REFRESH_TOKEN_EXPIRES_IN_SECONDS: number;
+
+  @IsInt()
+  @Min(60)
+  SERVICE_TOKEN_EXPIRES_IN_SECONDS: number;
+
+  @Matches(SERVICE_CLIENT_SECRET_PATTERN)
+  NOTIFICATION_SERVICE_CLIENT_SECRET: string;
 
   @IsInt()
   @Min(1)

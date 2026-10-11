@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import AuthServiceClientModule from './clients/auth-service-client.module';
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
@@ -11,6 +12,7 @@ import NotificationModule from './modules/notification/notification.module';
     DatabaseModule,
     NotificationModule,
     KafkaModule,
+    AuthServiceClientModule,
     HealthModule,
   ],
   controllers: [],

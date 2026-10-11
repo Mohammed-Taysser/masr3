@@ -26,6 +26,9 @@ const validEnv = {
   KAFKA_BROKER: 'localhost:42000',
   KAFKA_CLIENT_ID: 'notification-service',
   KAFKA_CONSUMER_GROUP_ID: 'notification-service',
+
+  AUTH_SERVICE_URL: 'http://localhost:7000/api',
+  SERVICE_CLIENT_SECRET: 'ab'.repeat(32),
 };
 
 describe('validate', () => {
@@ -81,12 +84,34 @@ describe('validate', () => {
       'KAFKA_BROKER',
       'KAFKA_CLIENT_ID',
       'KAFKA_CONSUMER_GROUP_ID',
+      'AUTH_SERVICE_URL',
+      'SERVICE_CLIENT_SECRET',
     ])('throws when %s is missing', (property) => {
       const config = { ...validEnv };
 
       delete config[property as keyof typeof config];
 
       expect(() => validate(config)).toThrow();
+    });
+  });
+
+  describe('AUTH_SERVICE_URL', () => {
+    it.each([
+      ['without the /api prefix', 'http://localhost:7000'],
+      ['with a trailing slash', 'http://localhost:7000/api/'],
+      ['without a protocol', 'localhost:7000/api'],
+    ])('rejects a URL %s', (_case, AUTH_SERVICE_URL) => {
+      expect(() => validate({ ...validEnv, AUTH_SERVICE_URL })).toThrow();
+    });
+  });
+
+  describe('SERVICE_CLIENT_SECRET', () => {
+    it.each([
+      ['too short', 'ab'.repeat(31)],
+      ['uppercase hex', 'AB'.repeat(32)],
+      ['not hex', 'z'.repeat(64)],
+    ])('rejects a secret that is %s', (_case, SERVICE_CLIENT_SECRET) => {
+      expect(() => validate({ ...validEnv, SERVICE_CLIENT_SECRET })).toThrow();
     });
   });
 

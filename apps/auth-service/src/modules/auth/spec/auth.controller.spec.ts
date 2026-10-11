@@ -5,11 +5,12 @@ import AuthService from '../auth.service';
 
 import RegisterDto from '../dto/register.dto';
 import LoginDto from '../dto/login.dto';
+import RefreshTokenDto from '../dto/refresh-token.dto';
 import ForgotPasswordDto from '../dto/forgot-password.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import ChangePasswordDto from '../dto/change-password.dto';
 import UserEntity from '../../users/entities/user.entity';
-import { UserRoleEnum } from '../../users/users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -17,6 +18,9 @@ describe('AuthController', () => {
 
   const authResponse = {
     accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    tokenType: 'Bearer',
+    expiresIn: 300,
     user: {
       id: 1,
       email: 'john@example.com',
@@ -32,6 +36,7 @@ describe('AuthController', () => {
     authService = {
       register: jest.fn(),
       login: jest.fn(),
+      refresh: jest.fn(),
       forgetPassword: jest.fn(),
       resetPassword: jest.fn(),
       changePassword: jest.fn(),
@@ -61,6 +66,22 @@ describe('AuthController', () => {
 
       expect(authService.register).toHaveBeenCalledWith(dto);
       expect(result).toBe(authResponse);
+    });
+  });
+
+  describe('refresh', () => {
+    it('passes the DTO to AuthService and returns the result', async () => {
+      const dto: RefreshTokenDto = { refreshToken: 'refresh-token' };
+      const accessTokenResponse = {
+        accessToken: 'new-access-token',
+        tokenType: 'Bearer',
+        expiresIn: 300,
+      };
+
+      authService.refresh.mockResolvedValue(accessTokenResponse);
+
+      await expect(controller.refresh(dto)).resolves.toBe(accessTokenResponse);
+      expect(authService.refresh).toHaveBeenCalledWith(dto);
     });
   });
 

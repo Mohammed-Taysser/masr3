@@ -5,7 +5,7 @@ import CreateUserDto from '../dto/create-user.dto';
 import ListUsersQueryDto from '../dto/list-users-query.dto';
 import UpdateUserDto from '../dto/update-user.dto';
 import UserEntity from '../entities/user.entity';
-import { UserRoleEnum } from '../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 import UsersService from '../users.service';
 
 describe('UsersService', () => {
@@ -370,34 +370,76 @@ describe('UsersService', () => {
   });
 
   describe('update', () => {
-    it('updates an existing user', async () => {
-      const updatedUser = {
-        ...user,
-        firstName: 'Updated',
+    const mockUpdateQuery = (affected: number) => {
+      const query = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected }),
       };
 
-      repository.preload.mockResolvedValue(updatedUser);
-      repository.save.mockResolvedValue(updatedUser);
+      repository.createQueryBuilder.mockReturnValue(query as never);
+
+      return query;
+    };
+
+    it('updates an existing user and returns it', async () => {
+      const updatedUser = { ...user, firstName: 'Updated' };
+      const query = mockUpdateQuery(1);
+
+      repository.findOne.mockResolvedValue(updatedUser);
 
       const result = await service.update(1, updateDto);
 
-      expect(repository.preload).toHaveBeenCalledWith({
-        id: 1,
-        ...updateDto,
-      });
-
-      expect(repository.save).toHaveBeenCalledWith(updatedUser);
+      expect(query.set).toHaveBeenCalledWith({ ...updateDto });
+      expect(query.where).toHaveBeenCalledWith('id = :id', { id: 1 });
       expect(result).toBe(updatedUser);
     });
 
+    it('bumps tokenVersion in the same UPDATE when the role is set', async () => {
+      const query = mockUpdateQuery(1);
+
+      repository.findOne.mockResolvedValue(user);
+
+      await service.update(1, { role: UserRoleEnum.ADMIN });
+
+      const values = query.set.mock.calls[0][0];
+
+      expect(values.role).toBe(UserRoleEnum.ADMIN);
+      // The CASE only bumps when the stored role actually differs.
+      expect(values.tokenVersion()).toBe(
+        '"tokenVersion" + CASE WHEN "role" = :role THEN 0 ELSE 1 END',
+      );
+      expect(query.setParameter).toHaveBeenCalledWith(
+        'role',
+        UserRoleEnum.ADMIN,
+      );
+    });
+
+    it('leaves tokenVersion alone for an email-only change', async () => {
+      const query = mockUpdateQuery(1);
+
+      repository.findOne.mockResolvedValue(user);
+
+      await service.update(1, { email: 'new@example.com' });
+
+      expect(query.set.mock.calls[0][0]).toEqual({ email: 'new@example.com' });
+    });
+
+    it('returns the user unchanged for an empty update', async () => {
+      repository.findOne.mockResolvedValue(user);
+
+      await expect(service.update(1, {})).resolves.toBe(user);
+      expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
     it('throws NotFoundException when user does not exist', async () => {
-      repository.preload.mockResolvedValue(undefined);
+      mockUpdateQuery(0);
 
       await expect(service.update(999, updateDto)).rejects.toThrow(
         new NotFoundException('User not found'),
       );
-
-      expect(repository.save).not.toHaveBeenCalled();
     });
   });
 
@@ -536,16 +578,33 @@ describe('UsersService', () => {
   });
 
   describe('setActive', () => {
-    it('updates the active status', async () => {
+    it('bumps tokenVersion when deactivating', async () => {
       repository.update.mockResolvedValue({
         affected: 1,
       } as never);
 
       await service.setActive(1, false);
 
+      const [criteria, values] = repository.update.mock.calls[0] as [
+        unknown,
+        { isActive: boolean; tokenVersion: () => string },
+      ];
+
+      expect(criteria).toEqual({ id: 1 });
+      expect(values.isActive).toBe(false);
+      expect(values.tokenVersion()).toBe('"tokenVersion" + 1');
+    });
+
+    it('only flips the flag when activating', async () => {
+      repository.update.mockResolvedValue({
+        affected: 1,
+      } as never);
+
+      await service.setActive(1, true);
+
       expect(repository.update).toHaveBeenCalledWith(
         { id: 1 },
-        { isActive: false },
+        { isActive: true },
       );
     });
 
@@ -702,7 +761,7 @@ describe('UsersService', () => {
       });
 
       expect((payload.tokenVersion as () => string)()).toBe(
-        'tokenVersion + 1',
+        '"tokenVersion" + 1',
       );
     });
 
@@ -738,7 +797,7 @@ describe('UsersService', () => {
       });
 
       expect((payload.tokenVersion as () => string)()).toBe(
-        'tokenVersion + 1',
+        '"tokenVersion" + 1',
       );
     });
 

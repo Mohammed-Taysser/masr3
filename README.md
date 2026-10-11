@@ -12,10 +12,8 @@ pgbouncer in front of them, Kafka (KRaft) with Kafka UI, pgAdmin, and Mailhog fo
 testing. App services are never containerized; they run on the host via Nx (see "App services run
 on the host"). Package manager is **pnpm**.
 
-> This README describes **what exists on `main`**. The fuller implementation — internal
-> service-to-service auth, a guarded notification REST API, Kafka SASL + ACLs, shared Swagger
-> helpers — is parked on the `wip/full-implementation` branch and is being brought back in slices.
-> Document each piece here when it lands, not before.
+> This README describes **what exists on `main`**. Planned work lives in each service's
+> `docs/design.md` and moves here when it lands.
 
 ### Setup
 
@@ -30,6 +28,10 @@ cp apps/auth-service/.env.example apps/auth-service/.env          # if missing
 cp apps/notification-service/.env.example apps/notification-service/.env
 cp apps/trip-service/.env.example apps/trip-service/.env
 
+npx nx run auth-service:generate-signing-key --name=jwt           # RS256 signing key (once)
+openssl rand -hex 32                                              # client secret: set it as
+# NOTIFICATION_SERVICE_CLIENT_SECRET (auth-service) and SERVICE_CLIENT_SECRET (notification-service)
+
 npx nx run-many -t migrate                                        # schema for every service
 npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
 
@@ -40,16 +42,17 @@ npx nx run-many -t serve                                          # run all on t
 
 Useful individual targets:
 
-| Command                                             | What it does                                                         |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| `npx nx serve auth-service`                         | Run one service on the host                                          |
-| `npx nx run-many -t lint,test,typecheck`            | Lint, test and type-check every project (app, spec and script files) |
-| `npx nx run <service>:migrate`                      | Run pending migrations for one service                               |
-| `npx nx run <service>:migrate-generate --name=X`    | Generate a migration by diffing entities against the live DB         |
-| `npx nx run <service>:migrate-revert`               | Revert the last migration                                            |
-| `npx nx run auth-service:seed`                      | Seed dev users (`dependsOn: ["migrate"]`)                            |
-| `npx nx run auth-service:kafka:create-topics`       | Create the auth topics, idempotently                                 |
-| `npx nx run notification-service:preview-templates` | Render every email to `dist/email-previews/` with an index.html      |
+| Command                                                 | What it does                                                                 |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `npx nx serve auth-service`                             | Run one service on the host                                                  |
+| `npx nx run-many -t lint,test,typecheck`                | Lint, test and type-check every project (app, spec and script files)         |
+| `npx nx run <service>:migrate`                          | Run pending migrations for one service                                       |
+| `npx nx run <service>:migrate-generate --name=X`        | Generate a migration by diffing entities against the live DB                 |
+| `npx nx run <service>:migrate-revert`                   | Revert the last migration                                                    |
+| `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                    |
+| `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                         |
+| `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites) |
+| `npx nx run notification-service:preview-templates`     | Render every email to `dist/email-previews/` with an index.html              |
 
 ### Database scripts (migrate/seed)
 
@@ -312,12 +315,34 @@ It renders through the real `NotificationService` handlers with an in-memory mai
 repository, so a preview is exactly what would be sent. `index.html` links each template's HTML and
 text part, plus the stored (masked) copy where it differs.
 
+### Authentication
+
+auth-service signs RS256 tokens; every service verifies them **locally** against
+`GET http://localhost:7000/api/.well-known/jwks.json`, with one shared guard from `@masr3/libs`.
+Full guide — token types, access matrix, how to protect routes and call other services, rotation
+and compromise procedures: **[`docs/authentication.md`](docs/authentication.md)**.
+
+| Token   | Lifetime      | Accepted by                                                  |
+| ------- | ------------- | ------------------------------------------------------------ |
+| Access  | 5 minutes     | every ordinary protected route, in every service             |
+| Refresh | 7 days, fixed | only `POST /api/auth/refresh`                                |
+| Service | 5 minutes     | only `@RequireServiceScopes(...)` (`/api/internal/*`) routes |
+
+- Login and register return `{ accessToken, refreshToken, tokenType, expiresIn, user }`.
+- Logout, a password change or reset, deactivation and a role change bump the user's `tokenVersion`:
+  every refresh token dies, auth-service rejects old access tokens at once, other services within
+  the 5-minute access-token lifetime.
+- Services get service tokens from `POST /api/service-tokens` with their own Basic client secret;
+  allowed audiences and scopes live in `SERVICE_CLIENTS` (auth-service). Each `SERVICE_NAME` must
+  equal the service's registry id/audience.
+- `/api/internal/*` and `/api/service-tokens` must never be routed by a public ingress.
+
 ### notification-service
 
 Consumes auth events and records every delivery attempt in its own Postgres (`notification-db`,
-table `notifications`). It has **no notification HTTP API yet** — only `GET /api/health`. The
-guarded REST API is part of the parked internal-auth work; an unguarded one would let anyone send
-email as the app and read every user's address.
+table `notifications`). It has **no notification HTTP API yet** — only `GET /api/health`.
+It is the first service-token caller: `AuthServiceClient` (`src/clients/`) reads a user's contact
+from auth-service's internal route, ready for the coming `trip.*` notifications.
 
 A row is written as `PENDING` before the delivery attempt and updated to `SENT` or `FAILED`, so a
 crash mid-send leaves something visible. `SELECT * FROM notifications WHERE status = 'FAILED'` is
@@ -327,8 +352,9 @@ the dead-letter view; there is no Kafka `.dlq` topic.
 
 Owns trips — rides and parcels, in the inDrive style (the customer proposes a fare, drivers
 counter-offer). Today it is the schema, the domain core and a health probe: tables `trips` and
-`trip_status_history` in `trip-db`, and only `GET /api/health`. Like notification-service, it gets
-no trip endpoints until service-to-service auth lands.
+`trip_status_history` in `trip-db`, and only `GET /api/health`. The authentication guard is wired
+(closed by default, access tokens verified locally against the JWKS), so trip routes can use
+`@Roles(...)` and `@CurrentUser()`; none exist yet.
 
 - Fares are `decimal(10, 2)` in EGP (`TRIP_CURRENCY`). `decimalTransformer` turns pg's string back into a number.
 - A parcel must name a recipient — enforced by the `CHK_trips_parcel_recipient` constraint.
@@ -351,6 +377,10 @@ are in [`apps/trip-service/docs/design.md`](apps/trip-service/docs/design.md).
 | `auth-service`         | `http://localhost:7000/api/docs` | `.../api/docs-json` |
 | `notification-service` | `http://localhost:7001/api/docs` | `.../api/docs-json` |
 | `trip-service`         | `http://localhost:7002/api/docs` | `.../api/docs-json` |
+
+auth-service's Swagger groups the service-only routes (`/service-tokens`, `/internal/...`) under the
+`internal` tag; use **Authorize** with `bearer` for user and service tokens, `basic` for client
+credentials.
 
 ### DB UI
 

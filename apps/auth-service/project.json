@@ -85,6 +85,13 @@
         "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/database/seeds/seed-users.ts"
       }
     },
+    "generate-signing-key": {
+      "executor": "nx:run-commands",
+      "outputStyle": "static",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/modules/signing-key/generate-signing-key.ts"
+      }
+    },
     "kafka:create-topics": {
       "executor": "nx:run-commands",
       "options": {

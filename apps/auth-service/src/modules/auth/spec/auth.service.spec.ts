@@ -1,14 +1,18 @@
-import {
-  ConflictException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 
-import { AuthKafkaTopic } from '@masr3/libs';
+import {
+  AuthKafkaTopic,
+  REFRESH_TOKEN_AUDIENCE,
+  TokenUseEnum,
+  TokenVerifierService,
+  UserRoleEnum,
+} from '@masr3/libs';
 
 import AuthService from '../auth.service';
 import ChangePasswordDto from '../dto/change-password.dto';
 import ForgotPasswordDto from '../dto/forgot-password.dto';
 import LoginDto from '../dto/login.dto';
+import RefreshTokenDto from '../dto/refresh-token.dto';
 import RegisterDto from '../dto/register.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import PasswordService from '../services/password.service';
@@ -16,7 +20,6 @@ import TokenService from '../services/token.service';
 import KafkaProducerService from '../../../kafka/kafka-producer.service';
 import UsersService from '../../users/users.service';
 import UserEntity from '../../users/entities/user.entity';
-import { UserRoleEnum } from '../../users/users.enum';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -25,6 +28,7 @@ describe('AuthService', () => {
   let passwordService: jest.Mocked<PasswordService>;
   let tokenService: jest.Mocked<TokenService>;
   let kafkaProducer: jest.Mocked<KafkaProducerService>;
+  let tokenVerifier: jest.Mocked<TokenVerifierService>;
 
   const user = {
     id: 1,
@@ -38,6 +42,13 @@ describe('AuthService', () => {
   } as UserEntity;
 
   const accessToken = 'access-token';
+  const refreshToken = 'refresh-token';
+  const tokens = {
+    accessToken,
+    refreshToken,
+    tokenType: 'Bearer',
+    expiresIn: 300,
+  };
 
   beforeEach(() => {
     usersService = {
@@ -45,6 +56,7 @@ describe('AuthService', () => {
       findByIdWithPassword: jest.fn(),
       findByValidResetToken: jest.fn(),
       findByIdOrFail: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       setPasswordResetToken: jest.fn(),
       resetPassword: jest.fn(),
@@ -58,7 +70,9 @@ describe('AuthService', () => {
     } as unknown as jest.Mocked<PasswordService>;
 
     tokenService = {
-      generateTokens: jest.fn(),
+      generateAccessToken: jest.fn().mockReturnValue(accessToken),
+      generateRefreshToken: jest.fn().mockReturnValue(refreshToken),
+      ACCESS_TOKEN_EXPIRES_IN_SECONDS: 300,
       createResetToken: jest.fn(),
       hashToken: jest.fn(),
       getResetTokenExpiry: jest.fn(),
@@ -68,11 +82,16 @@ describe('AuthService', () => {
       publish: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<KafkaProducerService>;
 
+    tokenVerifier = {
+      verify: jest.fn(),
+    } as unknown as jest.Mocked<TokenVerifierService>;
+
     service = new AuthService(
       usersService,
       passwordService,
       tokenService,
       kafkaProducer,
+      tokenVerifier,
     );
   });
 
@@ -95,8 +114,6 @@ describe('AuthService', () => {
 
       usersService.create.mockResolvedValue(user);
 
-      tokenService.generateTokens.mockReturnValue(accessToken);
-
       const result = await service.register(dto);
 
       expect(usersService.findByEmail).toHaveBeenCalledWith(dto.email);
@@ -108,9 +125,10 @@ describe('AuthService', () => {
         password: 'hashed-password',
       });
 
-      expect(tokenService.generateTokens).toHaveBeenCalledWith(user);
+      expect(tokenService.generateAccessToken).toHaveBeenCalledWith(user);
+      expect(tokenService.generateRefreshToken).toHaveBeenCalledWith(user);
 
-      expect(result).toEqual({ accessToken, user });
+      expect(result).toEqual({ ...tokens, user });
 
       expect(kafkaProducer.publish).toHaveBeenCalledWith(
         AuthKafkaTopic.USER_REGISTER,
@@ -132,7 +150,7 @@ describe('AuthService', () => {
 
       expect(passwordService.hash).not.toHaveBeenCalled();
       expect(usersService.create).not.toHaveBeenCalled();
-      expect(tokenService.generateTokens).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
   });
 
@@ -149,24 +167,21 @@ describe('AuthService', () => {
 
       passwordService.compare.mockResolvedValue(true);
 
-      tokenService.generateTokens.mockReturnValue(accessToken);
-
       const result = await service.login(dto);
 
       expect(usersService.findByEmail).toHaveBeenCalledWith(dto.email);
 
-      expect(usersService.findByIdWithPassword).toHaveBeenCalledWith(
-        user.id,
-      );
+      expect(usersService.findByIdWithPassword).toHaveBeenCalledWith(user.id);
 
       expect(passwordService.compare).toHaveBeenCalledWith(
         dto.password,
         user.password,
       );
 
-      expect(tokenService.generateTokens).toHaveBeenCalledWith(user);
+      expect(tokenService.generateAccessToken).toHaveBeenCalledWith(user);
+      expect(tokenService.generateRefreshToken).toHaveBeenCalledWith(user);
 
-      expect(result).toEqual({ accessToken, user });
+      expect(result).toEqual({ ...tokens, user });
     });
 
     it('throws UnauthorizedException when email does not exist', async () => {
@@ -178,7 +193,7 @@ describe('AuthService', () => {
 
       expect(usersService.findByIdWithPassword).not.toHaveBeenCalled();
       expect(passwordService.compare).not.toHaveBeenCalled();
-      expect(tokenService.generateTokens).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
 
     it('throws UnauthorizedException when account is inactive', async () => {
@@ -194,7 +209,7 @@ describe('AuthService', () => {
       );
 
       expect(passwordService.compare).not.toHaveBeenCalled();
-      expect(tokenService.generateTokens).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
 
     it('throws UnauthorizedException when password is incorrect', async () => {
@@ -208,7 +223,76 @@ describe('AuthService', () => {
         new UnauthorizedException('Invalid email or password'),
       );
 
-      expect(tokenService.generateTokens).not.toHaveBeenCalled();
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh', () => {
+    const dto: RefreshTokenDto = { refreshToken: 'signed-refresh-token' };
+    const claims = {
+      sub: '1',
+      tokenUse: TokenUseEnum.REFRESH,
+      tokenVersion: 0,
+    };
+
+    it('verifies the refresh profile and returns a new access token only', async () => {
+      tokenVerifier.verify.mockResolvedValue(claims as never);
+      usersService.findById.mockResolvedValue({
+        ...user,
+        role: UserRoleEnum.DRIVER,
+      } as UserEntity);
+
+      const result = await service.refresh(dto);
+
+      expect(tokenVerifier.verify).toHaveBeenCalledWith(
+        dto.refreshToken,
+        TokenUseEnum.REFRESH,
+        REFRESH_TOKEN_AUDIENCE,
+      );
+      expect(usersService.findById).toHaveBeenCalledWith(1);
+      expect(tokenService.generateAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({ role: UserRoleEnum.DRIVER }),
+      );
+      expect(tokenService.generateRefreshToken).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        accessToken,
+        tokenType: 'Bearer',
+        expiresIn: 300,
+      });
+    });
+
+    it.each([
+      ['a missing user', null],
+      ['an inactive user', { ...user, isActive: false }],
+      ['a stale token version', { ...user, tokenVersion: 1 }],
+    ])('rejects %s with 401', async (_case, storedUser) => {
+      tokenVerifier.verify.mockResolvedValue(claims as never);
+      usersService.findById.mockResolvedValue(storedUser as UserEntity);
+
+      await expect(service.refresh(dto)).rejects.toThrow(
+        new UnauthorizedException('Invalid refresh token'),
+      );
+      expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('lets a database error propagate', async () => {
+      const outage = new Error('connection terminated');
+
+      tokenVerifier.verify.mockResolvedValue(claims as never);
+      usersService.findById.mockRejectedValue(outage);
+
+      await expect(service.refresh(dto)).rejects.toBe(outage);
+    });
+
+    it('lets a verification failure propagate', async () => {
+      tokenVerifier.verify.mockRejectedValue(
+        new UnauthorizedException('Invalid access token'),
+      );
+
+      await expect(service.refresh(dto)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(usersService.findById).not.toHaveBeenCalled();
     });
   });
 
@@ -229,17 +313,13 @@ describe('AuthService', () => {
 
       const result = await service.resetPassword(dto);
 
-      expect(tokenService.hashToken).toHaveBeenCalledWith(
-        dto.token,
-      );
+      expect(tokenService.hashToken).toHaveBeenCalledWith(dto.token);
 
       expect(usersService.findByValidResetToken).toHaveBeenCalledWith(
         'hashed-reset-token',
       );
 
-      expect(passwordService.hash).toHaveBeenCalledWith(
-        dto.newPassword,
-      );
+      expect(passwordService.hash).toHaveBeenCalledWith(dto.newPassword);
 
       expect(usersService.resetPassword).toHaveBeenCalledWith(
         user.id,
@@ -286,21 +366,16 @@ describe('AuthService', () => {
 
       const result = await service.forgetPassword(dto);
 
-      expect(usersService.findByEmail).toHaveBeenCalledWith(
-        dto.email,
-      );
+      expect(usersService.findByEmail).toHaveBeenCalledWith(dto.email);
 
       expect(tokenService.createResetToken).toHaveBeenCalled();
 
       expect(tokenService.getResetTokenExpiry).toHaveBeenCalled();
 
-      expect(usersService.setPasswordResetToken).toHaveBeenCalledWith(
-        user.id,
-        {
-          tokenHash: 'hashed-reset-token',
-          expiresAt,
-        },
-      );
+      expect(usersService.setPasswordResetToken).toHaveBeenCalledWith(user.id, {
+        tokenHash: 'hashed-reset-token',
+        expiresAt,
+      });
 
       // The raw token, not the stored hash: only the raw token makes a
       // working reset link.
@@ -358,18 +433,14 @@ describe('AuthService', () => {
 
       const result = await service.changePassword(user.id, dto);
 
-      expect(usersService.findByIdWithPassword).toHaveBeenCalledWith(
-        user.id,
-      );
+      expect(usersService.findByIdWithPassword).toHaveBeenCalledWith(user.id);
 
       expect(passwordService.compare).toHaveBeenCalledWith(
         dto.currentPassword,
         user.password,
       );
 
-      expect(passwordService.hash).toHaveBeenCalledWith(
-        dto.newPassword,
-      );
+      expect(passwordService.hash).toHaveBeenCalledWith(dto.newPassword);
 
       expect(usersService.changePassword).toHaveBeenCalledWith(
         user.id,
@@ -386,9 +457,7 @@ describe('AuthService', () => {
 
       passwordService.compare.mockResolvedValue(false);
 
-      await expect(
-        service.changePassword(user.id, dto),
-      ).rejects.toThrow(
+      await expect(service.changePassword(user.id, dto)).rejects.toThrow(
         new UnauthorizedException('Current password is incorrect'),
       );
 
@@ -403,9 +472,7 @@ describe('AuthService', () => {
 
       const result = await service.me(user.id);
 
-      expect(usersService.findByIdOrFail).toHaveBeenCalledWith(
-        user.id,
-      );
+      expect(usersService.findByIdOrFail).toHaveBeenCalledWith(user.id);
 
       expect(result).toBe(user);
     });
@@ -418,9 +485,7 @@ describe('AuthService', () => {
 
       const result = await service.logout(user.id);
 
-      expect(usersService.incrementTokenVersion).toHaveBeenCalledWith(
-        user.id,
-      );
+      expect(usersService.incrementTokenVersion).toHaveBeenCalledWith(user.id);
 
       expect(kafkaProducer.publish).toHaveBeenCalledWith(
         AuthKafkaTopic.USER_LOGGED_OUT,

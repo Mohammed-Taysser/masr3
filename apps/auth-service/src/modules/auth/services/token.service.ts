@@ -1,29 +1,61 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 
-import { dayjs } from '@masr3/libs';
+import {
+  AccessTokenClaims,
+  dayjs,
+  REFRESH_TOKEN_AUDIENCE,
+  RefreshTokenClaims,
+  TokenUseEnum,
+  USER_TOKEN_AUDIENCE,
+} from '@masr3/libs';
 
+import SigningKeyService from '../../signing-key/signing-key.service';
 import UserEntity from '../../users/entities/user.entity';
-import { JwtPayload } from '../auth.interface';
 
 @Injectable()
 class TokenService {
   constructor(
-    private readonly jwtService: JwtService,
+    private readonly signingKeyService: SigningKeyService,
     private readonly configService: ConfigService,
   ) {}
 
-  generateTokens(user: UserEntity) {
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
+  private readonly PASSWORD_RESET_TOKEN_TTL_MS =
+    this.configService.getOrThrow<number>('PASSWORD_RESET_TOKEN_TTL_MS');
+  private readonly REFRESH_TOKEN_EXPIRES_IN_SECONDS =
+    this.configService.getOrThrow<number>('REFRESH_TOKEN_EXPIRES_IN_SECONDS');
+  readonly ACCESS_TOKEN_EXPIRES_IN_SECONDS =
+    this.configService.getOrThrow<number>('ACCESS_TOKEN_EXPIRES_IN_SECONDS');
+
+  generateAccessToken(user: UserEntity): string {
+    const claims: AccessTokenClaims = {
+      sub: String(user.id),
+      tokenUse: TokenUseEnum.USER,
       role: user.role,
+      tokenVersion: user.tokenVersion,
+      email: user.email,
+    };
+
+    return this.signingKeyService.sign(
+      claims,
+      USER_TOKEN_AUDIENCE,
+      this.ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+    );
+  }
+
+  generateRefreshToken(user: UserEntity): string {
+    const claims: RefreshTokenClaims = {
+      sub: String(user.id),
+      tokenUse: TokenUseEnum.REFRESH,
       tokenVersion: user.tokenVersion,
     };
 
-    return this.jwtService.sign(payload);
+    return this.signingKeyService.sign(
+      claims,
+      REFRESH_TOKEN_AUDIENCE,
+      this.REFRESH_TOKEN_EXPIRES_IN_SECONDS,
+    );
   }
 
   createResetToken(): { token: string; tokenHash: string } {
@@ -37,11 +69,9 @@ class TokenService {
   }
 
   getResetTokenExpiry(): Date {
-    const ttlMs = this.configService.getOrThrow<number>(
-      'PASSWORD_RESET_TOKEN_TTL_MS',
-    );
-
-    return dayjs().add(ttlMs, 'millisecond').toDate();
+    return dayjs()
+      .add(this.PASSWORD_RESET_TOKEN_TTL_MS, 'millisecond')
+      .toDate();
   }
 }
 

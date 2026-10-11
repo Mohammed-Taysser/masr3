@@ -5,17 +5,27 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
-import { AuthKafkaTopic, BaseAuthEvent, dayjs } from '@masr3/libs';
+import {
+  AuthKafkaTopic,
+  BaseAuthEvent,
+  BEARER_TOKEN_TYPE,
+  dayjs,
+  REFRESH_TOKEN_AUDIENCE,
+  TokenUseEnum,
+  TokenVerifierService,
+} from '@masr3/libs';
 
 import ChangePasswordDto from './dto/change-password.dto';
 import ForgotPasswordDto from './dto/forgot-password.dto';
 import LoginDto from './dto/login.dto';
+import RefreshTokenDto from './dto/refresh-token.dto';
 import RegisterDto from './dto/register.dto';
 import ResetPasswordDto from './dto/reset-password.dto';
 
 import KafkaProducerService from '../../kafka/kafka-producer.service';
 import UserEntity from '../users/entities/user.entity';
 import UsersService from '../users/users.service';
+import AccessTokenResponseDto from './dto/access-token-response.dto';
 import AuthResponseDto from './dto/auth-response.dto';
 import PasswordService from './services/password.service';
 import TokenService from './services/token.service';
@@ -27,6 +37,7 @@ class AuthService {
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
     private readonly kafkaProducer: KafkaProducerService,
+    private readonly tokenVerifier: TokenVerifierService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -48,12 +59,7 @@ class AuthService {
       this.buildEvent(user),
     );
 
-    const accessToken = this.tokenService.generateTokens(user);
-
-    return {
-      accessToken,
-      user,
-    };
+    return this.buildAuthResponse(user);
   }
 
   async login(dto: LoginDto): Promise<AuthResponseDto> {
@@ -85,12 +91,26 @@ class AuthService {
       this.buildEvent(user),
     );
 
-    const accessToken = this.tokenService.generateTokens(user);
+    return this.buildAuthResponse(user);
+  }
 
-    return {
-      accessToken,
-      user,
-    };
+  async refresh(dto: RefreshTokenDto): Promise<AccessTokenResponseDto> {
+    const claims = await this.tokenVerifier.verify(
+      dto.refreshToken,
+      TokenUseEnum.REFRESH,
+      REFRESH_TOKEN_AUDIENCE,
+    );
+
+    const user = await this.usersService.findById(Number(claims.sub));
+
+    const isTokenCurrent =
+      user?.isActive === true && user.tokenVersion === claims.tokenVersion;
+
+    if (!isTokenCurrent) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return this.buildAccessTokenResponse(user);
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -189,6 +209,22 @@ class AuthService {
 
     return {
       message: 'Logged out successfully',
+    };
+  }
+
+  private buildAccessTokenResponse(user: UserEntity): AccessTokenResponseDto {
+    return {
+      accessToken: this.tokenService.generateAccessToken(user),
+      tokenType: BEARER_TOKEN_TYPE,
+      expiresIn: this.tokenService.ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+    };
+  }
+
+  private buildAuthResponse(user: UserEntity): AuthResponseDto {
+    return {
+      ...this.buildAccessTokenResponse(user),
+      refreshToken: this.tokenService.generateRefreshToken(user),
+      user,
     };
   }
 

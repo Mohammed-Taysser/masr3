@@ -14,8 +14,13 @@ const validEnv = {
   POSTGRES_PASSWORD: 'auth_user_password',
   POSTGRES_DB: 'auth_db',
 
-  JWT_SECRET: 'a'.repeat(32),
-  JWT_EXPIRES_IN: '1d',
+  JWT_PRIVATE_KEY_FILE: 'apps/auth-service/secrets/jwt.private.pem',
+
+  ACCESS_TOKEN_EXPIRES_IN_SECONDS: '300',
+  REFRESH_TOKEN_EXPIRES_IN_SECONDS: '604800',
+  SERVICE_TOKEN_EXPIRES_IN_SECONDS: '300',
+
+  NOTIFICATION_SERVICE_CLIENT_SECRET: 'ab'.repeat(32),
 
   PASSWORD_RESET_TOKEN_TTL_MS: '3600000',
 
@@ -82,8 +87,11 @@ describe('validate', () => {
       'POSTGRES_USER',
       'POSTGRES_PASSWORD',
       'POSTGRES_DB',
-      'JWT_SECRET',
-      'JWT_EXPIRES_IN',
+      'JWT_PRIVATE_KEY_FILE',
+      'ACCESS_TOKEN_EXPIRES_IN_SECONDS',
+      'REFRESH_TOKEN_EXPIRES_IN_SECONDS',
+      'SERVICE_TOKEN_EXPIRES_IN_SECONDS',
+      'NOTIFICATION_SERVICE_CLIENT_SECRET',
       'PASSWORD_RESET_TOKEN_TTL_MS',
       'THROTTLE_SHORT_TTL_MS',
       'THROTTLE_SHORT_LIMIT',
@@ -171,22 +179,61 @@ describe('validate', () => {
     });
   });
 
-  describe('JWT_SECRET', () => {
-    it('accepts a 32-character secret', () => {
-      expect(() =>
-        validate({
-          ...validEnv,
-          JWT_SECRET: 'a'.repeat(32),
-        }),
-      ).not.toThrow();
+  describe('token lifetimes', () => {
+    it('converts "300" to the integer 300', () => {
+      const result = validate(validEnv);
+
+      expect(result.ACCESS_TOKEN_EXPIRES_IN_SECONDS).toBe(300);
+      expect(result.REFRESH_TOKEN_EXPIRES_IN_SECONDS).toBe(604800);
+      expect(result.SERVICE_TOKEN_EXPIRES_IN_SECONDS).toBe(300);
     });
 
-    it('rejects a secret shorter than 32 characters', () => {
-      expect(() =>
+    it.each([
+      ['ACCESS_TOKEN_EXPIRES_IN_SECONDS', '300.5'],
+      ['ACCESS_TOKEN_EXPIRES_IN_SECONDS', 'five minutes'],
+      ['ACCESS_TOKEN_EXPIRES_IN_SECONDS', '59'],
+      ['REFRESH_TOKEN_EXPIRES_IN_SECONDS', '604800.5'],
+      ['REFRESH_TOKEN_EXPIRES_IN_SECONDS', '3599'],
+      ['SERVICE_TOKEN_EXPIRES_IN_SECONDS', '300.5'],
+      ['SERVICE_TOKEN_EXPIRES_IN_SECONDS', '59'],
+    ])('rejects %s=%s', (property, value) => {
+      expect(() => validate({ ...validEnv, [property]: value })).toThrow();
+    });
+  });
+
+  describe('signing keys', () => {
+    it('accepts an optional previous public key file', () => {
+      expect(
         validate({
           ...validEnv,
-          JWT_SECRET: 'a'.repeat(31),
-        }),
+          JWT_PREVIOUS_PUBLIC_KEY_FILE:
+            'apps/auth-service/secrets/old.public.pem',
+        }).JWT_PREVIOUS_PUBLIC_KEY_FILE,
+      ).toBe('apps/auth-service/secrets/old.public.pem');
+    });
+
+    it('rejects an empty previous public key file', () => {
+      expect(() =>
+        validate({ ...validEnv, JWT_PREVIOUS_PUBLIC_KEY_FILE: '' }),
+      ).toThrow();
+    });
+
+    it('rejects an empty private key file', () => {
+      expect(() =>
+        validate({ ...validEnv, JWT_PRIVATE_KEY_FILE: '' }),
+      ).toThrow();
+    });
+  });
+
+  describe('NOTIFICATION_SERVICE_CLIENT_SECRET', () => {
+    it.each([
+      ['too short', 'ab'.repeat(31)],
+      ['too long', 'ab'.repeat(33)],
+      ['uppercase hex', 'AB'.repeat(32)],
+      ['not hex', 'z'.repeat(64)],
+    ])('rejects a secret that is %s', (_case, secret) => {
+      expect(() =>
+        validate({ ...validEnv, NOTIFICATION_SERVICE_CLIENT_SECRET: secret }),
       ).toThrow();
     });
   });
@@ -224,15 +271,6 @@ describe('validate', () => {
         validate({
           ...validEnv,
           POSTGRES_DB: '',
-        }),
-      ).toThrow();
-    });
-
-    it('rejects an empty JWT expiration value', () => {
-      expect(() =>
-        validate({
-          ...validEnv,
-          JWT_EXPIRES_IN: '',
         }),
       ).toThrow();
     });

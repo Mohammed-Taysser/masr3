@@ -70,9 +70,7 @@ describe('LoginDto', () => {
         }),
       );
 
-      expect(errors.some((error) => error.property === 'password')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'password')).toBe(true);
     });
 
     it('rejects an undefined password', async () => {
@@ -81,9 +79,7 @@ describe('LoginDto', () => {
 
       const errors = await validate(dto);
 
-      expect(errors.some((error) => error.property === 'password')).toBe(
-        true,
-      );
+      expect(errors.some((error) => error.property === 'password')).toBe(true);
     });
   });
 });

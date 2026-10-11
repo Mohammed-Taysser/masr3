@@ -6,7 +6,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { UserRoleEnum } from '../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 
 class CreateUserDto {
   @ApiProperty({

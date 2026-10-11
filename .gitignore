@@ -49,3 +49,6 @@ Thumbs.db
 .env
 !.env.example
 !db.env
+
+# Signing keys from `nx run auth-service:generate-signing-key`. Never commit them.
+apps/*/secrets/

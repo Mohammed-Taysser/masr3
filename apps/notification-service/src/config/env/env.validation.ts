@@ -8,11 +8,17 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Matches,
   Max,
   Min,
   MinLength,
   validateSync,
 } from 'class-validator';
+
+import {
+  AUTH_SERVICE_URL_PATTERN,
+  SERVICE_CLIENT_SECRET_PATTERN,
+} from '@masr3/libs';
 
 import { toBoolean } from '../../shared/transformers/to-boolean.transformer';
 
@@ -99,6 +105,13 @@ class EnvironmentVariables {
   @IsString()
   @MinLength(1)
   KAFKA_CONSUMER_GROUP_ID: string;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  @Matches(AUTH_SERVICE_URL_PATTERN)
+  AUTH_SERVICE_URL: string;
+
+  @Matches(SERVICE_CLIENT_SECRET_PATTERN)
+  SERVICE_CLIENT_SECRET: string;
 }
 
 function validate(config: Record<string, unknown>): EnvironmentVariables {

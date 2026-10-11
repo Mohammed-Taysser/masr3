@@ -11,7 +11,6 @@ import {
   Post,
   Query,
   SerializeOptions,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -23,20 +22,18 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Roles } from '../auth/decorators/roles.decorator';
-import RolesGuard from '../auth/guards/roles.guard';
+import { Roles, UserRoleEnum } from '@masr3/libs';
+
 import CreateUserDto from './dto/create-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';
 import PaginatedUsersResponseDto from './dto/paginated-users-response.dto';
 import UpdateUserStatusDto from './dto/update-user-status.dto';
 import UpdateUserDto from './dto/update-user.dto';
 import UserResponseDto from './dto/user-response.dto';
-import { UserRoleEnum } from './users.enum';
 import UsersService from './users.service';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(RolesGuard)
 @Roles(UserRoleEnum.ADMIN)
 @Controller('users')
 class UsersController {
@@ -93,7 +90,8 @@ class UsersController {
   @SerializeOptions({ type: UserResponseDto })
   @ApiOperation({
     summary: 'Update a user',
-    description: 'Partially updates a user account.',
+    description:
+      "Partially updates a user account. Changing the role bumps the token version, so the user's existing access and refresh tokens are revoked.",
   })
   @ApiParam({
     name: 'id',
@@ -116,7 +114,7 @@ class UsersController {
   @ApiOperation({
     summary: 'Activate or deactivate an account',
     description:
-      'Updates the active status of a user account. Deactivating an account immediately prevents its existing JWTs from being accepted by the authentication guard.',
+      "Updates the active status of a user account. Deactivating also bumps the token version: auth-service rejects the user's access tokens at once, other services within the access-token lifetime, and every refresh token stops working, even after a later reactivation.",
   })
   @ApiParam({
     name: 'id',

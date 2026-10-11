@@ -40,9 +40,9 @@ describe('ChangePasswordDto', () => {
         }),
       );
 
-      expect(
-        errors.some((error) => error.property === 'currentPassword'),
-      ).toBe(true);
+      expect(errors.some((error) => error.property === 'currentPassword')).toBe(
+        true,
+      );
     });
   });
 

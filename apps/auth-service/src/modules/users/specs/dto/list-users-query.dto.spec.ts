@@ -1,7 +1,9 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import ListUsersQueryDto from '../../dto/list-users-query.dto';
-import { SortOrder, UserRoleEnum, UserSortBy } from '../../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
+
+import { SortOrder, UserSortBy } from '../../users.enum';
 
 describe('ListUsersQueryDto', () => {
   const createDto = (

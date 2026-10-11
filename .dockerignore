@@ -1,0 +1,3 @@
+# Secrets never go into an image, not even the build stage.
+apps/*/secrets/
+**/.env

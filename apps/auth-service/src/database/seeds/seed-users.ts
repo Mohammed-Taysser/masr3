@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import dataSource from '../data-source';
 import UserEntity from '../../modules/users/entities/user.entity';
-import { UserRoleEnum } from '../../modules/users/users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 import PasswordService from '../../modules/auth/services/password.service';
 
 interface SeedUser {

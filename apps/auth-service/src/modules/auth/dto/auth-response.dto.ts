@@ -2,16 +2,16 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
 
 import UserResponseDto from '../../users/dto/user-response.dto';
+import AccessTokenResponseDto from './access-token-response.dto';
 
-class AuthResponseDto {
+class AuthResponseDto extends AccessTokenResponseDto {
   @Expose()
   @ApiProperty({
-    example:
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoiY3VzdG9tZXJAbWFzcjMubG9jYWwifQ.',
+    example: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik56YkxzWGg4In0...',
     description:
-      'JWT access token. Send it as `Authorization: Bearer <token>` when calling protected endpoints.',
+      'Stateless refresh token, accepted only by `POST /api/auth/refresh`. Its expiry is fixed: refreshing never extends it. Logout, a password change or reset, deactivation and a role change revoke every refresh token of the user.',
   })
-  accessToken: string;
+  refreshToken: string;
 
   @Expose()
   @Type(() => UserResponseDto)

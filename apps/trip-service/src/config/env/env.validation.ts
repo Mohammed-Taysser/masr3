@@ -5,11 +5,15 @@ import {
   IsEnum,
   IsInt,
   IsString,
+  IsUrl,
+  Matches,
   Max,
   Min,
   MinLength,
   validateSync,
 } from 'class-validator';
+
+import { AUTH_SERVICE_URL_PATTERN } from '@masr3/libs';
 
 enum EnvironmentEnum {
   DEVELOPMENT = 'development',
@@ -54,6 +58,10 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   TRIP_REQUEST_TTL_MS: number;
+
+  @IsUrl({ require_tld: false, require_protocol: true })
+  @Matches(AUTH_SERVICE_URL_PATTERN)
+  AUTH_SERVICE_URL: string;
 }
 
 function validate(config: Record<string, unknown>): EnvironmentVariables {

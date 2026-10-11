@@ -15,6 +15,8 @@ const validEnv = {
   POSTGRES_DB: 'trip_db',
 
   TRIP_REQUEST_TTL_MS: '600000',
+
+  AUTH_SERVICE_URL: 'http://localhost:7000/api',
 };
 
 describe('validate', () => {
@@ -68,6 +70,17 @@ describe('validate', () => {
   describe('TRIP_REQUEST_TTL_MS', () => {
     it.each(['0', '-1', 'ten-minutes'])('rejects %p', (TRIP_REQUEST_TTL_MS) => {
       expect(() => validate({ ...validEnv, TRIP_REQUEST_TTL_MS })).toThrow();
+    });
+  });
+
+  describe('AUTH_SERVICE_URL', () => {
+    it.each([
+      ['without the /api prefix', 'http://localhost:7000'],
+      ['with a trailing slash', 'http://localhost:7000/api/'],
+      ['without a protocol', 'localhost:7000/api'],
+      ['that is not a URL', 'auth-service'],
+    ])('rejects a URL %s', (_case, AUTH_SERVICE_URL) => {
+      expect(() => validate({ ...validEnv, AUTH_SERVICE_URL })).toThrow();
     });
   });
 

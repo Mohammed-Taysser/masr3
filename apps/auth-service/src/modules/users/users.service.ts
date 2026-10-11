@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import {
+  FindOptionsWhere,
+  ILike,
+  QueryDeepPartialEntity,
+  Repository,
+} from 'typeorm';
 import UserEntity from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import CreateUserDto from './dto/create-user.dto';
@@ -50,13 +55,32 @@ class UsersService {
   }
 
   async update(id: number, dto: UpdateUserDto) {
-    const user = await this.userRepository.preload({ id, ...dto });
+    if (Object.keys(dto).length === 0) {
+      return this.findByIdOrFail(id);
+    }
 
-    if (!user) {
+    const values: QueryDeepPartialEntity<UserEntity> = { ...dto };
+
+    // A role change revokes the user's tokens. The CASE reads the old role in
+    // the same UPDATE, so the check cannot race another write.
+    if (dto.role !== undefined) {
+      values.tokenVersion = () =>
+        `"tokenVersion" + CASE WHEN "role" = :role THEN 0 ELSE 1 END`;
+    }
+
+    const result = await this.userRepository
+      .createQueryBuilder()
+      .update(UserEntity)
+      .set(values)
+      .where('id = :id', { id })
+      .setParameter('role', dto.role)
+      .execute();
+
+    if (result.affected === 0) {
       throw new NotFoundException('User not found');
     }
 
-    return this.userRepository.save(user);
+    return this.findByIdOrFail(id);
   }
 
   async findByEmail(email: string): Promise<UserEntity | null> {
@@ -109,7 +133,14 @@ class UsersService {
   }
 
   async setActive(id: number, isActive: boolean): Promise<void> {
-    const result = await this.userRepository.update({ id }, { isActive });
+    // Deactivating bumps tokenVersion too, so a later reactivation cannot
+    // revive refresh tokens issued before it.
+    const result = await this.userRepository.update(
+      { id },
+      isActive
+        ? { isActive }
+        : { isActive, tokenVersion: () => '"tokenVersion" + 1' },
+    );
 
     if (result.affected === 0) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -172,7 +203,7 @@ class UsersService {
         password: hashedPassword,
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
-        tokenVersion: () => 'tokenVersion + 1',
+        tokenVersion: () => '"tokenVersion" + 1',
       },
     );
 
@@ -186,7 +217,7 @@ class UsersService {
       { id },
       {
         password: hashedPassword,
-        tokenVersion: () => 'tokenVersion + 1',
+        tokenVersion: () => '"tokenVersion" + 1',
       },
     );
 

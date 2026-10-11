@@ -1,9 +1,3 @@
-enum UserRoleEnum {
-  CUSTOMER = 'CUSTOMER',
-  DRIVER = 'DRIVER',
-  ADMIN = 'ADMIN',
-}
-
 enum UserSortBy {
   CREATED_AT = 'createdAt',
   UPDATED_AT = 'updatedAt',
@@ -17,4 +11,4 @@ enum SortOrder {
   DESC = 'DESC',
 }
 
-export { UserRoleEnum, UserSortBy, SortOrder };
+export { UserSortBy, SortOrder };

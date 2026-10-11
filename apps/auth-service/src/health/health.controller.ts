@@ -1,9 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public } from '../modules/auth/decorators/public.decorator';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs, Public } from '@masr3/libs';
 
 @ApiTags('Health')
 @Controller('health')

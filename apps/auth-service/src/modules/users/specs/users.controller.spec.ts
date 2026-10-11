@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-import { UserRoleEnum } from '../users.enum';
+import { ROLES_KEY, UserRoleEnum } from '@masr3/libs';
 
 import CreateUserDto from '../dto/create-user.dto';
 import ListUsersQueryDto from '../dto/list-users-query.dto';
@@ -10,7 +10,6 @@ import UpdateUserDto from '../dto/update-user.dto';
 import UserEntity from '../entities/user.entity';
 import UsersController from '../users.controller';
 import UsersService from '../users.service';
-import { ROLES_KEY } from '../../auth/decorators/roles.decorator';
 
 describe('UsersController', () => {
   let controller: UsersController;

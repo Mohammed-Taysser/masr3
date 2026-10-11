@@ -31,13 +31,14 @@ async function bootstrap() {
   const builder = new DocumentBuilder()
     .setTitle('Auth Service')
     .setDescription(
-      'Authentication and user management for masr3 — and the only service that issues access tokens. Every other service verifies what is minted here.',
+      'Authentication and user management for masr3, and the only service that issues tokens. It signs RS256 access, refresh and service tokens; every other service verifies them locally against the JWKS at /api/.well-known/jwks.json.',
     )
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'bearer',
-    );
+    )
+    .addBasicAuth({ type: 'http', scheme: 'basic' }, 'basic');
 
   const document = SwaggerModule.createDocument(app, builder.build());
   SwaggerModule.setup(`${globalPrefix}/docs`, app, document);

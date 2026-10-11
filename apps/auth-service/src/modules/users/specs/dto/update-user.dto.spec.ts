@@ -1,6 +1,6 @@
 import { validate } from 'class-validator';
 import UpdateUserDto from '../../dto/update-user.dto';
-import { UserRoleEnum } from '../../users.enum';
+import { UserRoleEnum } from '@masr3/libs';
 
 describe('UpdateUserDto', () => {
   it('accepts an empty DTO', async () => {
