@@ -51,7 +51,8 @@
       "dependsOn": ["build"],
       "options": {
         "buildTarget": "notification-service:build",
-        "runBuildTargetDependencies": false
+        "runBuildTargetDependencies": false,
+        "port": 9230
       },
       "configurations": {
         "development": {

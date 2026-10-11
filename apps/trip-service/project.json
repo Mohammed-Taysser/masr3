@@ -49,7 +49,8 @@
       "dependsOn": ["build"],
       "options": {
         "buildTarget": "trip-service:build",
-        "runBuildTargetDependencies": false
+        "runBuildTargetDependencies": false,
+        "port": 9231
       },
       "configurations": {
         "development": {

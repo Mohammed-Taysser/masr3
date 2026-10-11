@@ -26,6 +26,10 @@ All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `loca
   scripts.
 - Never `pkill -f` / `pgrep -f … | kill` with a pattern that also appears in your own command
   line: it kills the shell running it. Kill by PID from `ps -eo pid,args | grep "[p]attern"`.
+- Nx records every running `serve` in `.nx/workspace-data`. A second `nx serve` / `run-many` of
+  the same app reports "running in another Nx process" and attaches to it instead of starting it.
+  To stop a serve you started, kill its whole tree, the `nx.js` process included. Killing only
+  `npx` or the app leaves Nx believing it still runs.
 
 ## Migrations
 
@@ -242,6 +246,11 @@ apps/<svc>/
      with every pattern.
 3. **`project.json`.** Add `migrate`, `migrate-generate`, `migrate-revert`, `migration-show` and
    `typecheck`, copied with paths changed. Give the e2e project a `typecheck` target too.
+   - Set the serve target's `port` to the next inspector port (9229+). Every `nx serve` opens
+     the inspector, and two services on one port fail with "address already in use".
+   - Add a matching **Attach** entry, and add it to the compound in `.vscode/launch.json`. Never
+     put `--inspect` in `NODE_OPTIONS`: every child process (npx, nx, webpack) then grabs the
+     port before the app does.
 4. **Env.** Add env files and validation (with spec), `db.env`, and the next app port (7000+).
 5. **Schema.** Write the entities, then generate the first migration with the CLI.
 6. **E2E.** Point the e2e spec at `GET /api/health` and the service's port.

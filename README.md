@@ -436,7 +436,8 @@ credentials.
 - **pgAdmin** (`http://localhost:43000`) — every Postgres connection is pre-registered via
   `infrastructure/ui/servers.json`; you are asked for the password once per session. pgAdmin
   imports that file only on its first start, so an existing `masr3_pgadmin_data` volume will not
-  show a newly added server — register it by hand or recreate the volume.
+  show a newly added server. Re-import the file, which replaces the registered servers:
+  `docker exec masr3-pgadmin /venv/bin/python3 /pgadmin4/setup.py load-servers /pgadmin4/servers.json --user pgadmin4@pgadmin.org --replace`.
 
 ### Monitoring & tracing
 
@@ -451,6 +452,12 @@ only infrastructure. Run one with `npx nx serve auth-service`, or all of them wi
 Each service's `.env` points at every dependency's _host-published_ port — pgbouncer at
 `localhost:41500`, Kafka at `localhost:42000` — never a docker-internal hostname. The same `.env`
 is therefore correct whether you run one service or all of them.
+
+Every `nx serve` also starts the Node inspector, each service on its own port so they can all run
+at once: `auth-service`=9229, `notification-service`=9230, `trip-service`=9231 (the serve target's
+`port` option). To debug, keep `nx serve` running in a terminal and start one of the **Attach …**
+configurations in `.vscode/launch.json` (or **Attach all services**). They reattach after each
+webpack rebuild restarts the app.
 
 `apps/auth-service/Dockerfile` still builds a deployable image if you need one; it is not part of
 the local stack.

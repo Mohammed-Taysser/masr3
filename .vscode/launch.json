@@ -3,56 +3,42 @@
   "configurations": [
     {
       "type": "node",
-      "request": "launch",
-      "name": "Debug auth-service with Nx",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["nx", "serve", "auth-service"],
-      "env": {
-        "NODE_OPTIONS": "--inspect=9229"
-      },
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
+      "request": "attach",
+      "name": "Attach auth-service (9229)",
+      "port": 9229,
+      "restart": true,
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/apps/auth-service/dist/**/*.(m|c|)js",
-        "!**/node_modules/**"
-      ]
+      "outFiles": ["${workspaceFolder}/dist/apps/auth-service/**/*.js"]
     },
     {
       "type": "node",
-      "request": "launch",
-      "name": "Debug notification-service with Nx",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "nx", "serve", "notification-service"],
-      "env": {
-        "NODE_OPTIONS": "--inspect=9230"
-      },
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
+      "request": "attach",
+      "name": "Attach notification-service (9230)",
+      "port": 9230,
+      "restart": true,
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/apps/notification-service/dist/**/*.(m|c|)js",
-        "!**/node_modules/**"
-      ]
+      "outFiles": ["${workspaceFolder}/dist/apps/notification-service/**/*.js"]
     },
     {
       "type": "node",
-      "request": "launch",
-      "name": "Debug trip-service with Nx",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "nx", "serve", "trip-service"],
-      "env": {
-        "NODE_OPTIONS": "--inspect=9231"
-      },
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
+      "request": "attach",
+      "name": "Attach trip-service (9231)",
+      "port": 9231,
+      "restart": true,
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/apps/trip-service/dist/**/*.(m|c|)js",
-        "!**/node_modules/**"
+      "outFiles": ["${workspaceFolder}/dist/apps/trip-service/**/*.js"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Attach all services",
+      "configurations": [
+        "Attach auth-service (9229)",
+        "Attach notification-service (9230)",
+        "Attach trip-service (9231)"
       ]
     }
   ]
