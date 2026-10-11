@@ -43,7 +43,7 @@ class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.CUSTOMER, UserRoleEnum.RIDER)
+  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.CUSTOMER, UserRoleEnum.DRIVER)
   @SerializeOptions({ type: PaginatedUsersResponseDto })
   @ApiOperation({
     summary: 'List users',

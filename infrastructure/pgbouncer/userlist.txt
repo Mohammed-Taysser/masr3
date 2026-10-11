@@ -1,2 +1,3 @@
 "auth" "auth_user_password"
 "notification" "notification_user_password"
+"trip" "trip_user_password"

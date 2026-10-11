@@ -20,7 +20,7 @@
     "password": "ChangeMe123!",
     "firstName": "Demo",
     "lastName": "Rider",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -60,7 +60,7 @@
     "password": "ChangeMe123!",
     "firstName": "Youssef",
     "lastName": "Farouk",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -68,7 +68,7 @@
     "password": "ChangeMe123!",
     "firstName": "Omar",
     "lastName": "Nabil",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -76,7 +76,7 @@
     "password": "ChangeMe123!",
     "firstName": "Laila",
     "lastName": "Adel",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": false
   },
   {
@@ -84,7 +84,7 @@
     "password": "ChangeMe123!",
     "firstName": "Hana",
     "lastName": "Samir",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -156,7 +156,7 @@
     "password": "ChangeMe123!",
     "firstName": "Karim",
     "lastName": "Wael",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -164,7 +164,7 @@
     "password": "ChangeMe123!",
     "firstName": "Ziad",
     "lastName": "Mostafa",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -172,7 +172,7 @@
     "password": "ChangeMe123!",
     "firstName": "Hossam",
     "lastName": "Ayman",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": false
   },
   {
@@ -180,7 +180,7 @@
     "password": "ChangeMe123!",
     "firstName": "Salma",
     "lastName": "Wael",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -188,7 +188,7 @@
     "password": "ChangeMe123!",
     "firstName": "Eslam",
     "lastName": "Hatem",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -196,7 +196,7 @@
     "password": "ChangeMe123!",
     "firstName": "Yassin",
     "lastName": "Magdy",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -260,7 +260,7 @@
     "password": "ChangeMe123!",
     "firstName": "Ibrahim",
     "lastName": "Salah",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   },
   {
@@ -268,7 +268,7 @@
     "password": "ChangeMe123!",
     "firstName": "Mariam",
     "lastName": "Khalil",
-    "role": "RIDER",
+    "role": "DRIVER",
     "isActive": true
   }
 ]

@@ -8,6 +8,24 @@
       "MaintenanceDB": "auth_db",
       "Username": "auth",
       "SSLMode": "prefer"
+    },
+    "2": {
+      "Name": "notification-db",
+      "Group": "masr3",
+      "Host": "masr3-notification-db",
+      "Port": 5432,
+      "MaintenanceDB": "notification_db",
+      "Username": "notification",
+      "SSLMode": "prefer"
+    },
+    "3": {
+      "Name": "trip-db",
+      "Group": "masr3",
+      "Host": "masr3-trip-db",
+      "Port": 5432,
+      "MaintenanceDB": "trip_db",
+      "Username": "trip",
+      "SSLMode": "prefer"
     }
   }
 }

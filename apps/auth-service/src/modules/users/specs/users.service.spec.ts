@@ -145,7 +145,7 @@ describe('UsersService', () => {
 
       await service.findAll(
         createQuery({
-          role: UserRoleEnum.RIDER,
+          role: UserRoleEnum.DRIVER,
           isActive: false,
         }),
       );
@@ -154,7 +154,7 @@ describe('UsersService', () => {
         expect.objectContaining({
           where: [
             {
-              role: UserRoleEnum.RIDER,
+              role: UserRoleEnum.DRIVER,
               isActive: false,
             },
           ],

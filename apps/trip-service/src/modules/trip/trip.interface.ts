@@ -1,0 +1,29 @@
+import TripEntity from './entities/trip.entity';
+import { TripActorEnum, TripStatusEnum, TripTypeEnum } from './trip.enum';
+
+interface CreateTripCommand {
+  customerId: number;
+  type: TripTypeEnum;
+  pickupLatitude: number;
+  pickupLongitude: number;
+  pickupAddress: string;
+  dropoffLatitude: number;
+  dropoffLongitude: number;
+  dropoffAddress: string;
+  proposedFare: number;
+  recipientName?: string;
+  recipientPhone?: string;
+  packageDescription?: string;
+}
+
+interface TransitionTripCommand {
+  tripId: number;
+  to: TripStatusEnum;
+  actor: TripActorEnum;
+  // Null only when actor is SYSTEM.
+  actorId: number | null;
+  reason?: string;
+  changes?: Partial<Pick<TripEntity, 'driverId' | 'agreedFare'>>;
+}
+
+export type { CreateTripCommand, TransitionTripCommand };

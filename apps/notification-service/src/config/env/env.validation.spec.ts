@@ -5,6 +5,8 @@ const validEnv = {
 
   PORT: '7001',
 
+  SERVICE_NAME: 'notification-service',
+
   APP_NAME: 'Masr3',
 
   DATABASE_HOST: 'localhost',
@@ -64,6 +66,7 @@ describe('validate', () => {
     it.each([
       'NODE_ENV',
       'PORT',
+      'SERVICE_NAME',
       'APP_NAME',
       'DATABASE_HOST',
       'DATABASE_PORT',

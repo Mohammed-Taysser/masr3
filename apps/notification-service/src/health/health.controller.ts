@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { dayjs } from '@masr3/libs';
 
@@ -17,7 +17,7 @@ class HealthController {
   check() {
     return {
       status: 'ok',
-      service: this.configService.getOrThrow<string>('KAFKA_CLIENT_ID'),
+      service: this.configService.getOrThrow<string>('SERVICE_NAME'),
       timestamp: dayjs().toISOString(),
     };
   }

@@ -33,6 +33,10 @@ class EnvironmentVariables {
 
   @IsString()
   @MinLength(1)
+  SERVICE_NAME: string;
+
+  @IsString()
+  @MinLength(1)
   APP_NAME: string;
 
   @IsString()

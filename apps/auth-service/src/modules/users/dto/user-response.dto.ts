@@ -16,7 +16,7 @@ class UserResponseDto {
     enum: UserRoleEnum,
     example: UserRoleEnum.CUSTOMER,
     description:
-      '`ADMIN` is required by `PATCH /api/users/:id/status`. `CUSTOMER` and `RIDER` are not yet treated differently by any endpoint.',
+      '`ADMIN` is required by `PATCH /api/users/:id/status`. `CUSTOMER` and `DRIVER` are not yet treated differently by any endpoint.',
   })
   role: UserRoleEnum;
 

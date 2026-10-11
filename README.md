@@ -6,8 +6,8 @@
 
 ## Infrastructure
 
-masr3 is an Nx monorepo of **two NestJS microservices** — `auth-service` and `notification-service`
-— plus a shared `libs` project. **Docker is infrastructure only**: one Postgres per service,
+masr3 is an Nx monorepo of **three NestJS microservices** — `auth-service`, `notification-service`
+and `trip-service` — plus a shared `libs` project. **Docker is infrastructure only**: one Postgres per service,
 pgbouncer in front of them, Kafka (KRaft) with Kafka UI, pgAdmin, and Mailhog for dev-only email
 testing. App services are never containerized; they run on the host via Nx (see "App services run
 on the host"). Package manager is **pnpm**.
@@ -28,11 +28,12 @@ docker compose up -d                                              # infrastructu
 
 cp apps/auth-service/.env.example apps/auth-service/.env          # if missing
 cp apps/notification-service/.env.example apps/notification-service/.env
+cp apps/trip-service/.env.example apps/trip-service/.env
 
-npx nx run-many -t migrate                                        # schema for both services
+npx nx run-many -t migrate                                        # schema for every service
 npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
 
-npx nx run-many -t serve                                          # run both on the host
+npx nx run-many -t serve                                          # run all on the host
 ```
 
 `.env` is gitignored; `.env.example` and `db.env` are committed. Copy the example before first run.
@@ -112,18 +113,18 @@ so `docker ps` output and cross-container hostnames stay unambiguous.
 
 Host-published ports only — container-internal ports keep each image's default:
 
-| Category       | Band  | Assigned                                        |
-| -------------- | ----- | ----------------------------------------------- |
-| Databases      | 41000 | `auth-db`=41000, `notification-db`=41001        |
-| pgbouncer      | 41500 | `pgbouncer`=41500                               |
-| Messaging      | 42000 | `kafka` (host listener)=42000, `kafka-ui`=42001 |
-| DB / infra UI  | 43000 | `pgadmin`=43000                                 |
-| Dev-only tools | 45000 | `mailhog` SMTP=45000, web UI=45001              |
+| Category       | Band  | Assigned                                                  |
+| -------------- | ----- | --------------------------------------------------------- |
+| Databases      | 41000 | `auth-db`=41000, `notification-db`=41001, `trip-db`=41002 |
+| pgbouncer      | 41500 | `pgbouncer`=41500                                         |
+| Messaging      | 42000 | `kafka` (host listener)=42000, `kafka-ui`=42001           |
+| DB / infra UI  | 43000 | `pgadmin`=43000                                           |
+| Dev-only tools | 45000 | `mailhog` SMTP=45000, web UI=45001                        |
 
-Databases are numbered contiguously in the order they were added; a new service takes 41002.
+Databases are numbered contiguously in the order they were added; a new service takes 41003.
 
 App services bind their own host port under `nx serve`: **auth-service=7000,
-notification-service=7001**.
+notification-service=7001, trip-service=7002**.
 
 ### infrastructure/ layout
 
@@ -139,7 +140,7 @@ Each service's own DB credentials do **not** live here — see below.
 ### Env files — one source of truth per credential
 
 - **`apps/<service>/.env`** — real values, **gitignored**. Copy from the committed `.env.example`.
-  Holds what is specific to that service: `PORT`, `DATABASE_HOST`/`DATABASE_PORT`, `KAFKA_BROKER`
+  Holds what is specific to that service: `PORT`, `SERVICE_NAME` (reported by `GET /api/health`), `DATABASE_HOST`/`DATABASE_PORT`, `KAFKA_BROKER`
   and its own `KAFKA_CLIENT_ID`. notification-service adds `APP_NAME`, `MAIL_*`,
   `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`. Every variable is checked at boot by
   that service's `config/env/env.validation.ts`; a missing one fails startup rather than surfacing
@@ -180,7 +181,7 @@ literal ISO strings.
 
 ### pgbouncer
 
-A single `masr3-pgbouncer` fronts both Postgres containers (`auth_db`, `notification_db`).
+A single `masr3-pgbouncer` fronts every Postgres container (`auth_db`, `notification_db`, `trip_db`).
 `infrastructure/pgbouncer/pgbouncer.ini` maps each database name to its Postgres host;
 `userlist.txt` holds **plaintext** passwords with `auth_type = plain`, so pgbouncer can answer
 whichever challenge the backend asks for (`scram-sha-256` or `md5`) with no extra setup. Pool mode
@@ -322,17 +323,41 @@ A row is written as `PENDING` before the delivery attempt and updated to `SENT` 
 crash mid-send leaves something visible. `SELECT * FROM notifications WHERE status = 'FAILED'` is
 the dead-letter view; there is no Kafka `.dlq` topic.
 
+### trip-service
+
+Owns trips — rides and parcels, in the inDrive style (the customer proposes a fare, drivers
+counter-offer). Today it is the schema, the domain core and a health probe: tables `trips` and
+`trip_status_history` in `trip-db`, and only `GET /api/health`. Like notification-service, it gets
+no trip endpoints until service-to-service auth lands.
+
+- Fares are `decimal(10, 2)` in EGP (`TRIP_CURRENCY`). `decimalTransformer` turns pg's string back into a number.
+- A parcel must name a recipient — enforced by the `CHK_trips_parcel_recipient` constraint.
+- `TripService.create` and `TripService.transition` are the only ways a trip is written.
+  - Each runs in one transaction and appends a `trip_status_history` row (who, when, why).
+    `trips` holds no copies of those timestamps.
+  - A transition locks the trip row, so concurrent changes are serialised. The loser gets a
+    `409`.
+- One active trip per customer and per driver, enforced by the partial unique indexes
+  `UQ_trips_active_customer` / `UQ_trips_active_driver`.
+- `TRIP_REQUEST_TTL_MS` sets `expiresAt` on new trips. Nothing expires them yet.
+
+The planned lifecycle, bidding, concurrency, outbox, live location (WebSocket + Redis) and expiry
+are in [`apps/trip-service/docs/design.md`](apps/trip-service/docs/design.md).
+
 ### API docs (Swagger)
 
 | Service                | UI                               | OpenAPI JSON        |
 | ---------------------- | -------------------------------- | ------------------- |
 | `auth-service`         | `http://localhost:7000/api/docs` | `.../api/docs-json` |
 | `notification-service` | `http://localhost:7001/api/docs` | `.../api/docs-json` |
+| `trip-service`         | `http://localhost:7002/api/docs` | `.../api/docs-json` |
 
 ### DB UI
 
-- **pgAdmin** (`http://localhost:43000`) — both Postgres connections are pre-registered via
-  `infrastructure/ui/servers.json`; you are asked for the password once per session.
+- **pgAdmin** (`http://localhost:43000`) — every Postgres connection is pre-registered via
+  `infrastructure/ui/servers.json`; you are asked for the password once per session. pgAdmin
+  imports that file only on its first start, so an existing `masr3_pgadmin_data` volume will not
+  show a newly added server — register it by hand or recreate the volume.
 
 ### Monitoring & tracing
 
@@ -340,13 +365,13 @@ None. No service exposes `/metrics` — only `GET /api/health`.
 
 ### App services run on the host
 
-`auth-service` and `notification-service` never run as containers — `docker-compose.yaml` holds
-only infrastructure. Run one with `npx nx serve auth-service`, or both with
+The app services never run as containers — `docker-compose.yaml` holds
+only infrastructure. Run one with `npx nx serve auth-service`, or all of them with
 `npx nx run-many -t serve`. That gets Nx's webpack watch for free, with no image rebuilds.
 
 Each service's `.env` points at every dependency's _host-published_ port — pgbouncer at
 `localhost:41500`, Kafka at `localhost:42000` — never a docker-internal hostname. The same `.env`
-is therefore correct whether you run one service or both.
+is therefore correct whether you run one service or all of them.
 
 `apps/auth-service/Dockerfile` still builds a deployable image if you need one; it is not part of
 the local stack.

@@ -78,6 +78,34 @@ services:
     networks:
       - masr3-network
 
+  trip-db:
+    image: postgres:16-alpine
+    container_name: masr3-trip-db
+    restart: unless-stopped
+
+    env_file:
+      - ./apps/trip-service/db.env
+
+    ports:
+      - '41002:5432'
+
+    volumes:
+      - masr3_trip_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - masr3-network
+
   # ========================================
   # PgBouncer
   # ========================================
@@ -93,6 +121,7 @@ services:
   # PgBouncer must use Docker DNS names for PostgreSQL:
   #   masr3-auth-db:5432
   #   masr3-notification-db:5432
+  #   masr3-trip-db:5432
   #
 
   pgbouncer:
@@ -111,6 +140,8 @@ services:
       auth-db:
         condition: service_healthy
       notification-db:
+        condition: service_healthy
+      trip-db:
         condition: service_healthy
 
     healthcheck:
@@ -150,6 +181,8 @@ services:
       auth-db:
         condition: service_healthy
       notification-db:
+        condition: service_healthy
+      trip-db:
         condition: service_healthy
 
     networks:
@@ -232,6 +265,9 @@ volumes:
 
   masr3_notification_db_data:
     name: masr3_notification_db_data
+
+  masr3_trip_db_data:
+    name: masr3_trip_db_data
 
   masr3_kafka_data:
     name: masr3_kafka_data

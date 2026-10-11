@@ -44,7 +44,8 @@
       },
       "exclude": [
         "apps/auth-service-e2e/**/*",
-        "apps/notification-service-e2e/**/*"
+        "apps/notification-service-e2e/**/*",
+        "apps/trip-service-e2e/**/*"
       ]
     }
   ]

@@ -1,6 +1,6 @@
 enum UserRoleEnum {
   CUSTOMER = 'CUSTOMER',
-  RIDER = 'RIDER',
+  DRIVER = 'DRIVER',
   ADMIN = 'ADMIN',
 }
 

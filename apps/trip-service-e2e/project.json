@@ -1,0 +1,25 @@
+{
+  "name": "trip-service-e2e",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "implicitDependencies": ["trip-service"],
+  "targets": {
+    "e2e": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{e2eProjectRoot}"],
+      "dependsOn": ["trip-service:build", "trip-service:serve"],
+      "options": {
+        "jestConfig": "apps/trip-service-e2e/jest.config.cts",
+        "passWithNoTests": true
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+      }
+    }
+  }
+}

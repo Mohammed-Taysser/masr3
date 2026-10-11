@@ -28,6 +28,10 @@ class EnvironmentVariables {
 
   @IsString()
   @MinLength(1)
+  SERVICE_NAME: string;
+
+  @IsString()
+  @MinLength(1)
   DATABASE_HOST: string;
 
   @IsInt()

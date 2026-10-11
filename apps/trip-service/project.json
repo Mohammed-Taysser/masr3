@@ -1,0 +1,101 @@
+{
+  "name": "trip-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/trip-service/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "prune-lockfile": {
+      "dependsOn": ["build"],
+      "cache": true,
+      "executor": "@nx/js:prune-lockfile",
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/package.json",
+        {
+          "runtime": "node -e \"try{console.log('pnpm major '+require('child_process').execSync('pnpm --version',{stdio:['ignore','pipe','ignore']}).toString().trim().split('.')[0])}catch{console.log('pnpm major unavailable')}\""
+        }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/apps/trip-service/package.json",
+        "{workspaceRoot}/dist/apps/trip-service/pnpm-lock.yaml",
+        "{workspaceRoot}/dist/apps/trip-service/pnpm-workspace.yaml",
+        "{workspaceRoot}/dist/apps/trip-service/patches",
+        "{workspaceRoot}/dist/apps/trip-service/local_path_modules"
+      ],
+      "options": {
+        "buildTarget": "build"
+      }
+    },
+    "copy-workspace-modules": {
+      "dependsOn": ["build"],
+      "cache": true,
+      "outputs": ["{workspaceRoot}/dist/apps/trip-service/workspace_modules"],
+      "executor": "@nx/js:copy-workspace-modules",
+      "options": {
+        "buildTarget": "build"
+      }
+    },
+    "prune": {
+      "dependsOn": ["prune-lockfile", "copy-workspace-modules"],
+      "executor": "nx:noop"
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": ["build"],
+      "options": {
+        "buildTarget": "trip-service:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "trip-service:build:development"
+        },
+        "production": {
+          "buildTarget": "trip-service:build:production"
+        }
+      }
+    },
+    "test": {
+      "options": {
+        "passWithNoTests": true
+      }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/trip-service/tsconfig.app.json typeorm-ts-node-commonjs migration:run -d apps/trip-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "if [ -z \"{args.name}\" ]; then echo 'Error: migration name is required. Usage: nx run trip-service:migrate-generate --name=create-trip-tables'; exit 1; fi; TS_NODE_PROJECT=apps/trip-service/tsconfig.app.json typeorm-ts-node-commonjs migration:generate apps/trip-service/src/database/migrations/{args.name} -d apps/trip-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-revert": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/trip-service/tsconfig.app.json typeorm-ts-node-commonjs migration:revert -d apps/trip-service/src/database/data-source.ts"
+      }
+    },
+    "migration-show": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/trip-service/tsconfig.app.json typeorm-ts-node-commonjs migration:show -d apps/trip-service/src/database/data-source.ts"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.app.json && tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+      }
+    }
+  }
+}

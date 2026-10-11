@@ -5,6 +5,8 @@ const validEnv = {
 
   PORT: '7000',
 
+  SERVICE_NAME: 'auth-service',
+
   DATABASE_HOST: 'masr3-pgbouncer',
   DATABASE_PORT: '6432',
 
@@ -74,6 +76,7 @@ describe('validate', () => {
     it.each([
       'NODE_ENV',
       'PORT',
+      'SERVICE_NAME',
       'DATABASE_HOST',
       'DATABASE_PORT',
       'POSTGRES_USER',

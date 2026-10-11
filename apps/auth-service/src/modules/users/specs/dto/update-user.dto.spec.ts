@@ -44,7 +44,7 @@ describe('UpdateUserDto', () => {
   it('accepts a role update', async () => {
     const dto = new UpdateUserDto();
 
-    dto.role = UserRoleEnum.RIDER;
+    dto.role = UserRoleEnum.DRIVER;
 
     const errors = await validate(dto);
 

@@ -19,7 +19,7 @@ describe('Roles decorator', () => {
 
   it('supports multiple roles', () => {
     class Target {
-      @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RIDER)
+      @Roles(UserRoleEnum.ADMIN, UserRoleEnum.DRIVER)
       handler() {
         // Exists only to carry the decorator.
       }
@@ -27,7 +27,7 @@ describe('Roles decorator', () => {
 
     const metadata = Reflect.getMetadata(ROLES_KEY, Target.prototype.handler);
 
-    expect(metadata).toEqual([UserRoleEnum.ADMIN, UserRoleEnum.RIDER]);
+    expect(metadata).toEqual([UserRoleEnum.ADMIN, UserRoleEnum.DRIVER]);
   });
 
   it('sets an empty array when called with no roles', () => {
