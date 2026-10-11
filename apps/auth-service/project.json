@@ -84,6 +84,21 @@
       "options": {
         "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/database/seeds/seed-users.ts"
       }
+    },
+    "kafka:create-topics": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/kafka-create-topics.sh",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.app.json && tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+      }
     }
   }
 }

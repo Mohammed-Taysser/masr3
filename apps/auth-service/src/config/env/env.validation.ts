@@ -82,6 +82,14 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   THROTTLE_LONG_LIMIT: number;
+
+  @IsString()
+  @MinLength(1)
+  KAFKA_BROKER: string;
+
+  @IsString()
+  @MinLength(1)
+  KAFKA_CLIENT_ID: string;
 }
 
 function validate(config: Record<string, unknown>): EnvironmentVariables {

@@ -3,6 +3,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { AuthKafkaTopic } from '@masr3/libs';
+
 import AuthService from '../auth.service';
 import ChangePasswordDto from '../dto/change-password.dto';
 import ForgotPasswordDto from '../dto/forgot-password.dto';
@@ -11,6 +13,7 @@ import RegisterDto from '../dto/register.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import PasswordService from '../services/password.service';
 import TokenService from '../services/token.service';
+import KafkaProducerService from '../../../kafka/kafka-producer.service';
 import UsersService from '../../users/users.service';
 import UserEntity from '../../users/entities/user.entity';
 import { UserRoleEnum } from '../../users/users.enum';
@@ -21,6 +24,7 @@ describe('AuthService', () => {
   let usersService: jest.Mocked<UsersService>;
   let passwordService: jest.Mocked<PasswordService>;
   let tokenService: jest.Mocked<TokenService>;
+  let kafkaProducer: jest.Mocked<KafkaProducerService>;
 
   const user = {
     id: 1,
@@ -60,10 +64,15 @@ describe('AuthService', () => {
       getResetTokenExpiry: jest.fn(),
     } as unknown as jest.Mocked<TokenService>;
 
+    kafkaProducer = {
+      publish: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<KafkaProducerService>;
+
     service = new AuthService(
       usersService,
       passwordService,
       tokenService,
+      kafkaProducer,
     );
   });
 
@@ -102,6 +111,16 @@ describe('AuthService', () => {
       expect(tokenService.generateTokens).toHaveBeenCalledWith(user);
 
       expect(result).toEqual({ accessToken, user });
+
+      expect(kafkaProducer.publish).toHaveBeenCalledWith(
+        AuthKafkaTopic.USER_REGISTER,
+        expect.objectContaining({
+          eventId: expect.any(String),
+          userId: user.id,
+          email: user.email,
+          firstName: user.firstName,
+        }),
+      );
     });
 
     it('throws ConflictException when email already exists', async () => {
@@ -283,6 +302,23 @@ describe('AuthService', () => {
         },
       );
 
+      // The raw token, not the stored hash: only the raw token makes a
+      // working reset link.
+      expect(kafkaProducer.publish).toHaveBeenCalledWith(
+        AuthKafkaTopic.PASSWORD_RESET_REQUESTED,
+        expect.objectContaining({
+          userId: user.id,
+          email: user.email,
+          resetToken: 'raw-reset-token',
+          expiresAt: expiresAt.toISOString(),
+        }),
+      );
+
+      expect(kafkaProducer.publish).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ tokenHash: expect.anything() }),
+      );
+
       expect(result).toEqual({
         message:
           'If an account exists with this email, password reset instructions have been sent.',
@@ -301,6 +337,7 @@ describe('AuthService', () => {
 
       expect(tokenService.createResetToken).not.toHaveBeenCalled();
       expect(usersService.setPasswordResetToken).not.toHaveBeenCalled();
+      expect(kafkaProducer.publish).not.toHaveBeenCalled();
     });
   });
 
@@ -375,13 +412,19 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('increments the token version', async () => {
+    it('increments the token version and publishes a logout event', async () => {
+      usersService.findByIdOrFail.mockResolvedValue(user);
       usersService.incrementTokenVersion.mockResolvedValue();
 
       const result = await service.logout(user.id);
 
       expect(usersService.incrementTokenVersion).toHaveBeenCalledWith(
         user.id,
+      );
+
+      expect(kafkaProducer.publish).toHaveBeenCalledWith(
+        AuthKafkaTopic.USER_LOGGED_OUT,
+        expect.objectContaining({ userId: user.id }),
       );
 
       expect(result).toEqual({

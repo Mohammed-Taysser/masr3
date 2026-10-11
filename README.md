@@ -4,283 +4,359 @@
 
 ✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
 
-## Infrastructurestructure
+## Infrastructure
 
-masr3 is an Nx monorepo of 6 NestJS microservices (auth, customer, delivery, logging, notification, user). **Docker is infrastructure only** — one Postgres per relational service, MongoDB for logging, pgbouncer in front of Postgres, Kafka (KRaft), Kafka UI, DB UI tools, Prometheus + Grafana, Jaeger, and Mailhog for dev-only email testing. App services are never containerized; they run on the host via Nx (see "App services run on the host" below). Package manager is **pnpm**.
+masr3 is an Nx monorepo of **two NestJS microservices** — `auth-service` and `notification-service`
+— plus a shared `libs` project. **Docker is infrastructure only**: one Postgres per service,
+pgbouncer in front of them, Kafka (KRaft) with Kafka UI, pgAdmin, and Mailhog for dev-only email
+testing. App services are never containerized; they run on the host via Nx (see "App services run
+on the host"). Package manager is **pnpm**.
+
+> This README describes **what exists on `main`**. The fuller implementation — internal
+> service-to-service auth, a guarded notification REST API, Kafka SASL + ACLs, shared Swagger
+> helpers — is parked on the `wip/full-implementation` branch and is being brought back in slices.
+> Document each piece here when it lands, not before.
 
 ### Setup
 
+There are no `pnpm` shortcuts — the root `package.json` `scripts` block is **empty**. Use the
+commands directly:
+
 ```sh
 pnpm install
-pnpm docker:up          # infrastructure only: dbs, pgbouncer, kafka, ui tools, monitoring
-pnpm setup:all          # per service: create .env, migrate, seed, create Kafka topics
-pnpm dev:all            # serve every service on the host
+docker compose up -d                                              # infrastructure
+
+cp apps/auth-service/.env.example apps/auth-service/.env          # if missing
+cp apps/notification-service/.env.example apps/notification-service/.env
+
+npx nx run-many -t migrate                                        # schema for both services
+npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
+
+npx nx run-many -t serve                                          # run both on the host
 ```
 
-`pnpm setup:all` creates each `apps/<service>/.env` from its committed `.env.example` if it doesn't exist yet, so there is no copy loop to run by hand — although it never overwrites an `.env` you already have (see "Per-service setup" below).
+`.env` is gitignored; `.env.example` and `db.env` are committed. Copy the example before first run.
 
-### Scripts (package.json)
+Useful individual targets:
 
-Local dev (no Docker, runs straight through Nx):
-
-| Script           | What it does                                             |
-| ---------------- | -------------------------------------------------------- |
-| `pnpm dev:all`   | `nx run-many --target=serve --all` — serve every service |
-| `pnpm build:all` | `nx run-many --target=build --all`                       |
-| `pnpm test:all`  | `nx run-many --target=test --all`                        |
-| `pnpm lint:all`  | `nx run-many --target=lint --all`                        |
-
-Docker:
-
-| Script                | What it does                                                                                             |
-| --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pnpm docker:up`      | Build + start the infrastructure stack (dbs, pgbouncer, kafka, ui tools, monitoring) — no app services, see below |
-| `pnpm docker:up:dev`  | Same, plus Mailhog (`--profile dev`)                                                                     |
-| `pnpm docker:down`    | Stop everything                                                                                          |
-| `pnpm docker:restart` | Down, then up --build                                                                                    |
-| `pnpm docker:logs`    | Follow logs for all containers                                                                           |
-| `pnpm docker:ps`      | List container status/health                                                                             |
-| `pnpm docker:build`   | Build images only                                                                                        |
-| `pnpm docker:clean`   | **Destructive** — `down -v --remove-orphans`, drops all volumes/data                                     |
-
-### Per-service setup — `apps/<service>/scripts/setup.sh`
-
-Every app service has one setup script, and it is the single definition of what "this service is set up" means:
-
-```sh
-bash apps/auth-service/scripts/setup.sh   # one service
-pnpm setup:all                            # every service, in order
-```
-
-Each script does the same three things in the same order, so they read identically:
-
-1. **Create `.env`** from `.env.example` if it doesn't exist yet. It never overwrites an existing `.env` — that file holds your local values, and silently rewriting it is how you lose them. If the two define different _keys_, it warns with that diff (see below).
-2. **Migrate**, then **seed** — but only if the service actually defines those targets, which is asked of Nx rather than assumed. `customer-service` has neither today, so both steps print "defines no … target — skipped"; the day it gains a `migrate` target, its setup script starts migrating with no edit.
-3. **Create Kafka topics** where the service owns them (`auth-service`).
-
-Docker is deliberately **not** checked here — start the infrastructure first (`pnpm docker:up`, as the quickstart above does). Nothing replaced that check, so the failure is yours to hit: for a service with migrations, a database that isn't up surfaces as a connection error out of `migrate`; for one that has no `migrate`/`seed` targets yet (`customer-service`, `delivery-service`), there is nothing to fail, and setup will report the service ready with its database down. What is running on your machine is not what preparing a service means.
-
-The mechanics live once in `scripts/lib/setup-common.sh`; each per-service script is a handful of lines that declare _what_ that service needs. `scripts/setup-all.sh` only sequences them, and discovers them from the filesystem — adding `apps/<new-service>/scripts/setup.sh` is all it takes to be picked up by `pnpm setup:all`.
-
-The individual steps remain available on their own (`npx nx run auth-service:migrate`, `:seed`, `:kafka-create-topics`) — the script orders them, it doesn't replace them.
-
-Comparing `.env` against `.env.example` is the one part of this that is **not** a check — it only warns. It prints the diff in both directions: keys the template defines that your `.env` lacks (usually the ones that would stop a service booting), and keys your `.env` still defines that the template dropped (leftovers). Keys only — values are never compared, and neither file is ever edited. Nothing fails, nothing later in setup reads a result from it, and nothing is repeated at the end of the run; it is something you see and judge.
-
-A setup script is deliberately **not** a rubber stamp. It fails — non-zero, with the reason — rather than declaring a service ready when it can see something that would stop that service working. Your infrastructurestructure is no longer its business, so what remains is Nx itself, plus the target's own failure: a `migrate` that errors takes the script down with it, since every step runs under `set -e`. Nx being unreadable is fatal, because "this project has no `migrate` target" and "Nx is broken" must not look the same — a broken Nx would otherwise silently skip migrations and still print _ready_. The one soft spot: with no `jq` on `PATH` the target list can't be read at all, and `setup::load_targets` warns and skips rather than failing.
+| Command                                             | What it does                                                         |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| `npx nx serve auth-service`                         | Run one service on the host                                          |
+| `npx nx run-many -t lint,test,typecheck`            | Lint, test and type-check every project (app, spec and script files) |
+| `npx nx run <service>:migrate`                      | Run pending migrations for one service                               |
+| `npx nx run <service>:migrate-generate --name=X`    | Generate a migration by diffing entities against the live DB         |
+| `npx nx run <service>:migrate-revert`               | Revert the last migration                                            |
+| `npx nx run auth-service:seed`                      | Seed dev users (`dependsOn: ["migrate"]`)                            |
+| `npx nx run auth-service:kafka:create-topics`       | Create the auth topics, idempotently                                 |
+| `npx nx run notification-service:preview-templates` | Render every email to `dist/email-previews/` with an index.html      |
 
 ### Database scripts (migrate/seed)
 
-Each service that owns a Postgres database defines its own `migrate` / `migrate-generate` / `migrate-revert` / `seed` targets in **its own `project.json`** (currently `auth-service` and `notification-service`) — nothing service-specific lives in the root `package.json` for this. A new service just adds the same targets to its own `project.json`; the root scripts below never need editing again.
+Each service that owns a Postgres database defines its own `migrate` / `migrate-generate` /
+`migrate-revert` / `migration-show` targets in **its own `project.json`** — nothing
+service-specific lives in the root `package.json`.
 
-These all run **on the host**, plain `ts-node`/TypeORM CLI commands — no docker involved. That works because the committed `apps/<service>/.env` points `DATABASE_HOST`/`DATABASE_PORT` at pgbouncer's _host-published_ port (`localhost:41500`), the same port the service itself connects through when you `nx serve` it — there's no separate docker-internal address to reconcile, since the app never runs inside docker either.
+These run **on the host**, as plain `ts-node`/TypeORM CLI commands — no docker involved. That works
+because each service's `.env` points `DATABASE_HOST`/`DATABASE_PORT` at pgbouncer's
+_host-published_ port (`localhost:41500`), the same address the service itself uses under
+`nx serve`. Both services use that one port; `POSTGRES_DB` in each `db.env` selects the database.
 
-| Command                                    | What it does                                                                                |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `npx nx run auth-service:migrate`          | Run pending migrations for one service                                                      |
-| `npx nx run auth-service:migrate-generate` | Generate a migration — diffs entities against a live DB, never hand-written                 |
-| `npx nx run auth-service:migrate-revert`   | Revert the last migration                                                                   |
-| `npx nx run auth-service:seed`             | Seed that service's dev users (`dependsOn: ["migrate"]`, so migrate always runs first)      |
-| `pnpm setup:all`                           | Every service's `apps/<service>/scripts/setup.sh`, in order — see "Per-service setup" above |
-
-### Running multiple targets/scripts at once
-
-Nx's `run-many` runs one target across every project that defines it, in parallel, skipping projects that don't:
+### Running multiple targets at once
 
 ```sh
-npx nx run-many -t test                                  # run `test` on every project
-npx nx run-many -t test,lint,build                       # several targets in one call, still per-project
+npx nx run-many -t test                                  # `test` on every project
+npx nx run-many -t lint,test,typecheck                   # the pre-commit check, every project
 npx nx run-many -t test --projects=auth-service,libs     # limit to specific projects
-npx nx run-many -t migrate,seed                          # only touches projects that define migrate/seed
+npx nx run-many -t migrate                               # only projects that define migrate
 ```
 
-`pnpm test:all` / `lint:all` / `build:all` are just named shortcuts for common `run-many` calls — reach for `npx nx run-many` directly for anything not already covered by one of those.
+### Running tests
+
+Every project, `libs` included, has a `test` target. It is not written in `project.json`:
+`@nx/jest/plugin` (in `nx.json`) infers it for any project with a `jest.config.cts`, and
+`@nx/eslint` infers `lint` the same way. `npx nx show project <name>` lists every target a project
+really has. There are no `package.json` test scripts; everything runs through Nx from the repo
+root.
+
+```sh
+npx nx test libs                               # one project (also: auth-service, notification-service)
+npx nx test libs --watch                       # re-run on file changes
+npx nx test libs dayjs.spec                    # only spec files matching the pattern
+npx nx test libs --coverage                    # coverage report → coverage/libs/
+npx nx test libs --skip-nx-cache               # force a real run instead of a cached result
+```
+
+To run one file, pass a filename pattern, not `--testFile`: the target is plain `jest`, which
+silently ignores `--testFile` and runs every suite.
+
+Nx caches results: if nothing in a project changed since the last run, it replays the previous
+result instead of running the tests again. Use `--skip-nx-cache` when you want a fresh run.
+
+After changing `libs`, test the services that import it too:
+
+```sh
+npx nx run-many -t test --projects=libs,auth-service,notification-service
+npx nx affected -t test                        # only projects affected by your changes
+```
+
+New specs go next to the code they test, in a `spec/` folder, named `*.spec.ts` — for example
+`libs/src/lib/date/spec/dayjs.spec.ts`. Jest finds them automatically; there is nothing to
+register. A project with no spec files fails `nx test` ("No tests found"), so add a real spec
+rather than switching on `passWithNoTests`.
 
 ### Naming & port convention
 
-Compose service keys (`auth-db`, `pgbouncer`, ...) are plain, undecorated names — `docker compose logs auth-db`, `docker compose restart kafka`, etc. The actual `container_name` for each is still prefixed `masr3-` (e.g. `masr3-auth-db`), so `docker ps` output and cross-container hostnames (used in env files, pgbouncer.ini, Grafana's datasource URL, ...) stay unambiguous. Host-published ports only (container-internal ports keep each image's normal default — only the host side is remapped, to avoid colliding with anything else already running on your machine); there's no "app services" band here since none run in docker:
+Compose service keys (`auth-db`, `pgbouncer`, …) are plain names — `docker compose logs auth-db`,
+`docker compose restart kafka`. Each `container_name` is prefixed `masr3-` (e.g. `masr3-auth-db`),
+so `docker ps` output and cross-container hostnames stay unambiguous.
 
-| Category                   | Base  | Assignments                                                                           |
-| -------------------------- | ----- | ------------------------------------------------------------------------------------- |
-| Databases                  | 41000 | auth=41000, customer=41001, delivery=41002, logging=41004 (Mongo), notification=41006 |
-| pgbouncer                  | 41500 | masr3-pgbouncer=41500                                                                 |
-| Messaging                  | 42000 | kafka(host listener)=42000, kafka-ui=42001                                            |
-| DB/infrastructure UI tools          | 43000 | pgadmin=43000, mongo-express=43001, redisinsight=43002                                |
-| Monitoring/tracing         | 44000 | prometheus=44000, grafana=44001, jaeger-ui=44002, jaeger-otlp-http=44003              |
-| Dev-only (`--profile dev`) | 45000 | mailhog-smtp=45000, mailhog-web=45001                                                 |
+Host-published ports only — container-internal ports keep each image's default:
 
-App services bind directly to their own port on the host when run via `nx serve` (no docker port mapping involved): auth=7000, customer=7001, delivery=7002, logging=7003, user=7004, notification=7005. Each service's `.env` (`AUTH_SERVICE_URL`, etc.) points peers at `http://localhost:<port>/api` accordingly.
+| Category       | Band  | Assigned                                        |
+| -------------- | ----- | ----------------------------------------------- |
+| Databases      | 41000 | `auth-db`=41000, `notification-db`=41001        |
+| pgbouncer      | 41500 | `pgbouncer`=41500                               |
+| Messaging      | 42000 | `kafka` (host listener)=42000, `kafka-ui`=42001 |
+| DB / infra UI  | 43000 | `pgadmin`=43000                                 |
+| Dev-only tools | 45000 | `mailhog` SMTP=45000, web UI=45001              |
+
+Databases are numbered contiguously in the order they were added; a new service takes 41002.
+
+App services bind their own host port under `nx serve`: **auth-service=7000,
+notification-service=7001**.
 
 ### infrastructure/ layout
 
-`infrastructure/` only holds config for tools that aren't owned by any single service — grouped by category, matching the `docker-compose.yaml` section comments:
-
 ```text
 infrastructure/
+  kafka.env
   pgbouncer/    pgbouncer.ini, userlist.txt
-  messaging/    kafka.env
-  ui/           pgadmin.env, servers.json, mongo-express.env
-  monitoring/   prometheus.yml, grafana.env, jaeger.env, provisioning/datasources/datasource.yml
+  ui/           pgadmin.env, servers.json
 ```
 
-`provisioning/datasources/` is the one forced exception to "flat" — Grafana itself requires that nested `provisioning/<type>/` shape for anything it auto-loads.
-
-Each Postgres/Mongo service's own DB credentials do **not** live in `infrastructure/` — see below.
+Each service's own DB credentials do **not** live here — see below.
 
 ### Env files — one source of truth per credential
 
-- `apps/<service>/.env` — real values, gitignored. Copy from `apps/<service>/.env.example` (committed template) before first run. Holds only what's specific to that service: `PORT`, `DATABASE_HOST`/`DATABASE_PORT` (or `MONGO_HOST`/`MONGO_PORT` for logging-service), and the `*_SERVICE_URL` peer contract below — plus notification-service's `JWT_SECRET` (shared with auth-service, see "Shared auth" above), `MAIL_*` (required, see "Mail" below) and optional `PASSWORD_RESET_URL_BASE`.
-- `apps/<service>/db.env` — that service's database credentials (`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`, or `MONGO_INITDB_ROOT_USERNAME`/`MONGO_INITDB_ROOT_PASSWORD`/`MONGO_INITDB_DATABASE` for logging-service). Lives with the owning service, not under `infrastructure/` — in a "each service owns its own database" microservice layout, the credentials are that service's concern, not shared platform config. The exact same file is loaded by **both** the DB container (`docker-compose.yaml`'s `env_file`) and the app itself when it runs on the host (`ConfigModule`/`data-source.ts` load it directly) — one file, one source of truth, no copy-pasted values to keep in sync.
-- Peer-service URLs are **deliberately not** pre-declared. Nothing calls a peer over HTTP yet, so a `*_SERVICE_URL` block would be five static values per service that no code reads and nothing validates — and, being static, they'd drift out of sync with the port convention above with no test to catch it. Add the one URL a real call needs, in the service making the call, when it makes it.
-- `docker-compose.yaml` itself never sets inline `environment:` for app/db services — everything flows through `env_file:`.
-- `mongo-express` is the one unavoidable exception to "one source of truth": it needs its own `ME_CONFIG_MONGODB_ADMIN*` variable names, which can't be an alias of `MONGO_INITDB_ROOT_*` — so `infrastructure/ui/mongo-express.env` repeats the same credential values as `apps/logging-service/db.env` under different names. Keep the two in sync by hand if you change the Mongo password.
+- **`apps/<service>/.env`** — real values, **gitignored**. Copy from the committed `.env.example`.
+  Holds what is specific to that service: `PORT`, `DATABASE_HOST`/`DATABASE_PORT`, `KAFKA_BROKER`
+  and its own `KAFKA_CLIENT_ID`. notification-service adds `APP_NAME`, `MAIL_*`,
+  `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`. Every variable is checked at boot by
+  that service's `config/env/env.validation.ts`; a missing one fails startup rather than surfacing
+  later as `undefined`.
+- **`apps/<service>/db.env`** — that service's database credentials
+  (`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`), committed. The same file is loaded by
+  **both** the DB container (`env_file`) and the app on the host (`ConfigModule` /
+  `data-source.ts`) — one file, no copy-pasted values to keep in sync.
+- `docker-compose.yaml` never sets inline `environment:` for database services — everything flows
+  through `env_file:`. (`kafka-ui` is the exception: two plain settings.)
+
+> **Committed secrets.** Both `db.env` files are tracked, so their values are in git history. They
+> are dev-only placeholders today. If you put a real value in one, it is disclosed the moment it is
+> committed — rotate first, then untrack.
+
+### Dates — always dayjs
+
+**Use `dayjs` for every date: creating, formatting, comparing, adding or subtracting time.** Do
+not use `new Date()`, `Date.now()`, `Date.parse`, `toUTCString()`/`toLocaleString()` or
+`Intl.DateTimeFormat`, and do not add another date library.
+
+Import it from the shared lib, never from `dayjs` directly:
+
+```ts
+import { dayjs } from '@masr3/libs';
+
+dayjs().toISOString(); // now, for an event or a timestamp
+dayjs().add(ttlMs, 'millisecond').toDate(); // an expiry, when TypeORM needs a Date
+dayjs(expiresAt).diff(dayjs(from), 'minute'); // a duration
+dayjs.utc(iso).format('dddd, D MMMM YYYY [at] HH:mm [UTC]'); // shown to a user
+```
+
+`libs/src/lib/date/dayjs.ts` is the one configured instance: it registers the `utc` and `timezone`
+plugins once, so every service gets the same behaviour. A plugin a service needs is added there,
+not in the service. The one exception is a `Date` that a library requires as a value (a TypeORM
+column, a JWT option): produce it with `.toDate()` at that boundary. Test fixtures may still use
+literal ISO strings.
 
 ### pgbouncer
 
-Single `masr3-pgbouncer` instance fronts all 5 Postgres containers. `infrastructure/pgbouncer/pgbouncer.ini` maps each service's database name to its own Postgres host in the `[databases]` section. `infrastructure/pgbouncer/userlist.txt` holds **plaintext** passwords with `auth_type = plain` — pgbouncer holds the real password, so it can complete whichever challenge the backend asks for (Postgres 16's default `scram-sha-256`, or `md5`) with no extra server-side configuration, no password re-hashing, and no init scripts. Since app services run on the host, they connect via pgbouncer's host-published port — `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` (each service's committed `.env`) — not the docker-internal `masr3-pgbouncer:6432` address. Pool mode is `transaction`; revisit if your ORM needs session-level features (advisory locks, `LISTEN`/`NOTIFY`, prepared statements).
+A single `masr3-pgbouncer` fronts both Postgres containers (`auth_db`, `notification_db`).
+`infrastructure/pgbouncer/pgbouncer.ini` maps each database name to its Postgres host;
+`userlist.txt` holds **plaintext** passwords with `auth_type = plain`, so pgbouncer can answer
+whichever challenge the backend asks for (`scram-sha-256` or `md5`) with no extra setup. Pool mode
+is `transaction`; revisit if an ORM feature needs session state (advisory locks,
+`LISTEN`/`NOTIFY`, prepared statements).
 
 ### Kafka
 
-`masr3-kafka` runs `apache/kafka:3.9.0` (the official Apache Kafka image; Bitnami retired its free-tier tags in 2025) single-node KRaft, no Zookeeper. `masr3-kafka-ui` (`:42001`) is pre-wired to the broker at `masr3-kafka:9092`.
+`masr3-kafka` runs `apache/kafka:3.9.0` single-node KRaft, no Zookeeper. It is **plaintext with no
+authentication** — fine on a local docker bridge, not for anything shared. `masr3-kafka-ui`
+(`http://localhost:42001`) talks to the broker at `masr3-kafka:9092`.
 
-The broker exposes two listeners, because the address it hands a client back must be reachable _from that client_:
+The broker exposes two listeners, because a client reconnects to the address the broker
+**advertises**, not the one it bootstrapped with:
 
-| Listener   | Broker port                       | Advertised to clients as | Use it from                                                                                                             |
-| ---------- | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `INTERNAL` | `9092`                            | `masr3-kafka:9092`       | other containers on `masr3-network` (kafka-ui), and `localhost:9092` when you've exec'd into the kafka container itself |
-| `EXTERNAL` | `9094`, host-published as `42000` | `localhost:42000`        | the host — every service's `KAFKA_BROKER=localhost:42000`, and any Kafka CLI you run in your own shell                  |
+| Listener   | Broker port                       | Advertised as      | Use it from                                                                     |
+| ---------- | --------------------------------- | ------------------ | ------------------------------------------------------------------------------- |
+| `INTERNAL` | `9092`                            | `masr3-kafka:9092` | other containers (kafka-ui, the healthcheck), and `docker exec` into the broker |
+| `EXTERNAL` | `9094`, host-published as `42000` | `localhost:42000`  | the host — every service's `KAFKA_BROKER=localhost:42000`                       |
 
-There is deliberately **no single bootstrap address that works everywhere**. The trap is `docker compose exec`, which puts you _inside_ the container where `localhost` means the container, not your machine: `--bootstrap-server localhost:42000` there fails with `Connection to node 1 (localhost/127.0.0.1:42000) could not be established` — the bootstrap itself succeeds, but the broker then advertises the host-published `42000`, which nothing listens on inside the container. When you exec, use the internal listener:
+So inside the container use `localhost:9092`, on the host use `localhost:42000`:
 
 ```sh
-docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic auth.user-register
+docker exec masr3-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
-Don't "fix" this by advertising `host.docker.internal:42000` instead — that name only resolves container→host, so host-side clients (i.e. every service) would break in exchange.
+Do not advertise `localhost:9092` for host clients: it sends them to whatever else owns host port
+9092 (another project's broker, say) and the failure looks like a missing topic.
 
-Topics are created idempotently (`--create --if-not-exists`) by `npx nx run auth-service:kafka-create-topics`. Its array in `apps/auth-service/scripts/kafka-create-topics.sh` must stay in sync with `AuthKafkaTopic` in `libs/src/lib/messaging/auth.topics.ts`, including a `<topic>.dlq` for every topic this service **consumes** (`auth.user-logged-in.dlq`, `auth.user-register.dlq`, `auth.user-logged-out.dlq`) — producing to a topic needs no `.dlq`; only the session consumer's dead-letter path writes to them (`session-events.consumer.ts`).
+**Topics are created explicitly.** `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` on the broker and
+`allowAutoTopicCreation: false` on both clients, so a typo'd topic name fails instead of silently
+creating a topic nobody consumes. `npx nx run auth-service:kafka:create-topics` runs the Kafka CLI
+inside the broker container (nothing to install on the host) and is safe to re-run. Its list must
+stay in sync with `AuthKafkaTopic` in `libs/src/lib/kafka/auth/auth.topics.ts`.
 
-`auth-service` and `notification-service` have `kafkajs` wiring. `auth-service` publishes `auth.user-logged-in`, `auth.user-register`, `auth.user-logged-out`, `auth.user-change-password`, and `auth.password-reset-requested`; its `auth-service-sessions` consumer group turns login/register into `sessions` rows and logout into closing them. `notification-service`'s `notification-service-delivery` group consumes `auth.password-reset-requested` and sends the email. The other four services are still infrastructure-only.
+`auth.password-reset-requested` carries the raw reset token (the email needs a working link), so
+that topic is created with `retention.ms=3600000` — the token is useless after
+`PASSWORD_RESET_TOKEN_TTL_MS`, and nothing should keep it longer than that plus slack.
 
-### Shared auth — making a service accept auth-service's tokens
+`auth-service` produces; `notification-service` consumes all six topics as consumer group
+`notification-service` (`KAFKA_CONSUMER_GROUP_ID`).
 
-Only `auth-service` issues access tokens; every other service only _verifies_ them. That verification is **not** re-implemented per service — it lives once in `libs/src/lib/auth/`, and a service buys into it with two lines:
+| Topic                           | Published by       | What notification-service does with it |
+| ------------------------------- | ------------------ | -------------------------------------- |
+| `auth.user-register`            | `register()`       | Welcome email                          |
+| `auth.user-logged-in`           | `login()`          | New sign-in alert                      |
+| `auth.user-logged-out`          | `logout()`         | Nothing — people sign out on purpose   |
+| `auth.user-change-password`     | `changePassword()` | "Your password was changed"            |
+| `auth.password-reset-requested` | `forgetPassword()` | The reset email (masked copy stored)   |
+| `auth.password-reset-completed` | `resetPassword()`  | "Your password has been reset"         |
 
-```ts
-// app.module.ts
-imports: [SharedAuthModule]
+Every event carries `eventId` (a UUID) and `occurredAt`, and is keyed by `userId`, so one user's
+events stay on one partition and are consumed in order. Payloads are typed by `AuthEventMap` in
+`libs`: `KafkaProducerService.publish()` will not compile with a payload that does not match its
+topic.
 
-// some controller
-@UseGuards(JwtAuthGuard)
-```
+**Publishing is best-effort.** `publish()` logs and swallows broker failures, because a Kafka
+outage must not turn `register` or `login` into a 500. The cost: a dropped
+`auth.password-reset-requested` means the user is told instructions were sent and no email
+arrives. Closing that needs a transactional outbox, which does not exist yet.
 
-That is the whole cost. There is no strategy, guard, principal type, or secret plumbing to copy, so the pieces that must agree byte-for-byte with the issuer can't drift between services.
+#### How the consumer handles failure
 
-| Piece                                                   | Role                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jwt-payload.interface.ts` — `JwtPayload`               | The wire contract: what `auth-service` signs, what every verifier reads.                                                                                                                                                                                    |
-| `authenticated-user.interface.ts` — `AuthenticatedUser` | The principal a verified token resolves to (`id`, `email`, `role`).                                                                                                                                                                                         |
-| `jwt-strategy-options.ts` — `buildJwtStrategyOptions`   | The single definition of _how_ a token is verified: bearer header only, expiry enforced, HS256 pinned rather than trusting the token's own header, and `JWT_SECRET` via `getOrThrow` so a missing secret fails fast instead of 401-ing every request later. |
-| `strategies/jwt-verification.strategy.ts`               | The default verifier — signature + expiry, then map onto the principal.                                                                                                                                                                                     |
-| `guards/jwt-auth.guard.ts` — `JwtAuthGuard`             | Applied per-controller, not globally, so a service leaves `/api/health` public without needing a `@Public()` escape hatch.                                                                                                                                  |
-| `decorators/current-user.decorator.ts` — `CurrentUser`  | `me(@CurrentUser() user: AuthenticatedUser)`.                                                                                                                                                                                                               |
-| `auth.module.ts` — `SharedAuthModule`                   | Wires the strategy; drop into `imports`.                                                                                                                                                                                                                    |
+`KafkaConsumerService` sorts every message into one of three outcomes:
 
-**The issuer keeps its own strategy, on purpose.** `auth-service` extends the _same_ verification options but then re-checks `tokenVersion`/`isActive` against its own `users` table on every request, so logout, password change and deactivation revoke tokens immediately. It can do that precisely because that state is its own; a shared verifier reaching into another service's database would couple every service to another service's schema and uptime.
+- **Can never succeed** — unknown topic, invalid JSON, no `eventId`/`email`. Logged and skipped, so
+  one bad message cannot block the partition behind it.
+- **Delivery failed** (SMTP down, unsupported channel) — not an exception. It is stored as a
+  `FAILED` row with the error, and the offset moves on.
+- **Anything else** (the database is unreachable) — rethrown on purpose. The offset is not
+  committed and kafkajs retries, instead of acknowledging an event that was never handled.
 
-The consequence for the other services, stated plainly: they verify signature and expiry only, so **`auth-service`'s `JWT_EXPIRES_IN` is the real revocation window** outside the issuer. Closing that gap properly means token introspection or a shared revocation list, not a direct DB read.
+**Idempotency.** Kafka delivers at least once. Before sending, the service inserts a `PENDING` row
+keyed by the event's `eventId`, which is unique — a redelivered event fails that insert and is
+skipped. Verified by rewinding the consumer group to the start of every topic: every event was
+redelivered and no second email went out.
 
-**One value still has to be shared by hand:** `JWT_SECRET` must be byte-identical in `apps/auth-service/.env` and in every service that imports `SharedAuthModule`; a mismatch `401`s every request. That's the one thing the library can't enforce for you.
+The consumer subscribes with `fromBeginning: true`, which only matters while the group has no
+committed offset: events published before notification-service first ran are still delivered.
+Changing `KAFKA_CONSUMER_GROUP_ID` starts a new group and therefore replays everything still in
+retention — harmless thanks to the idempotency check, but worth knowing.
 
 ### Mail (Mailhog + nodemailer)
 
-**Mailhog is dev-only** — it's behind the `dev` profile, so it only comes up with `pnpm docker:up:dev`, not plain `pnpm docker:up`. SMTP is host-published at `45000`; the web UI (where you read the messages) is at `45001`.
+**Mailhog is a dev tool that starts with the rest of the stack** — SMTP on `45000`, web UI on
+`http://localhost:45001`. Do not ship this compose file anywhere real without removing it.
 
-`notification-service` sends mail through `nodemailer` (`apps/notification-service/src/modules/mail/`). `MAIL_HOST`/`MAIL_PORT`/`MAIL_SECURE`/`MAIL_FROM` are **required** and fail fast at boot if any is missing — `MailService` carries no fallbacks, so a lenient check would only surface as `host: undefined` and mail that silently never sends. `MAIL_USER`/`MAIL_PASSWORD` are optional (Mailhog needs neither), and `PASSWORD_RESET_URL_BASE` controls where the link in the email points (default `http://localhost:3000/reset-password`). The committed `.env.example` points at Mailhog — SMTP `localhost:45000`, no auth, no TLS — so copying it is all a fresh checkout needs. `MailService` logs the transport it settled on at startup — `Mail transport ready: localhost:45000 (secure=false, no auth)` — so a misconfigured host is obvious immediately rather than buried in a failed send.
+`notification-service` sends through `nodemailer` (`src/modules/mail/`). `MAIL_HOST` / `MAIL_PORT` /
+`MAIL_SECURE` / `MAIL_FROM` are required; `MAIL_USER` / `MAIL_PASSWORD` are optional (Mailhog
+needs neither), and whether to authenticate is decided by `MAIL_USER`, not by `MAIL_SECURE`.
 
-Delivery sits **off the request path**: `auth-service`'s `forgotPassword` only publishes `auth.password-reset-requested`, and notification-service's consumer (group `notification-service-delivery`) turns that into the email. A mail outage therefore can't fail a password-reset request, and the event waits in Kafka until it sends.
+`MAIL_SECURE` goes through `toBoolean` (`src/shared/transformers/to-boolean.transformer.ts`)
+because class-transformer's `enableImplicitConversion` coerces with `Boolean()` and would read
+`'false'` as `true`.
 
-#### Email rendering
+Delivery sits **off the request path**: `forgotPassword` only publishes an event, so a mail outage
+cannot fail the HTTP request.
 
-Templates live in `src/modules/notifications/templates/` as pure functions with no Nest wiring. A template builds a plain data shape (`EmailLayoutOptions`) and hands it to the shared `email-layout.ts`, which renders it **two ways from one source**: a table-based HTML part with inline styles only — the markup Outlook, Gmail and Apple Mail actually agree on, with the `<style>` block as enhancement rather than a dependency — and a plain-text part, so the two can't drift. The layout escapes all content, so a template never has to think about HTML injection.
+#### Email templates
 
-The layout also always spells the action's URL out beneath the button, because some clients strip buttons entirely. Adding a template means adding one file that returns `EmailContent` and registering its topic in the consumer; changing the design of every email means editing `email-layout.ts` only.
+**Look.** Every email shares `html/layout.html`: the app name above a single card whose top band is green for account email and amber for security email (`SECURITY_TEMPLATES` in `notification.constant.ts`), which also adds a "Security notice" line. Each email sets a `preheader`, the inbox preview text. The layout includes a dark palette for Apple Mail and Outlook.com, a fixed 600px wrapper for Outlook desktop, and table-based buttons that keep their shape in Outlook. Gmail drops web fonts, so the type is a system stack.
 
-The reset template renders **twice**: once with the real link for the recipient, once with the query string masked for the stored `body` column — so the record can't diverge from what was sent, and the raw token never reaches the database.
+Templates are files, not TypeScript — `src/modules/notification/templates/html/*.html` and
+`text/*.txt`, with `{{placeholder}}` substitution by `TemplateService`. Template names are
+`NotificationTemplateEnum`; each value is a file name.
 
-To look at a template while designing it:
+- Each email renders twice from one set of variables: the HTML fragment into `html/layout.html`,
+  the text fragment into `text/layout.txt`, so the two parts cannot drift.
+- Values are HTML-escaped on the way in. Repeated markup (the rows of the sign-in details table)
+  lives in `html/partials/*.html` and is rendered with `renderPartial`, then passed to `render` as
+  an `htmlFragments` entry — the one way to insert markup unescaped.
+- HTML comments are stripped when a template loads. Templates document their placeholders in
+  comments; without stripping, those placeholders were filled too and every email carried a hidden
+  comment containing, for the reset email, the live link.
+- The reset email renders twice: once with the real token for the recipient, once with
+  `token=***` for the stored `body`, so the raw token never reaches the database.
+
+**Templates are read at runtime, so they must reach `dist/`.** `webpack.config.js` copies them with
+an `assets` glob; without it a built bundle fails on the first send while tests still pass.
+
+To look at every email without sending anything:
 
 ```sh
-npx nx run notification-service:preview-email   # → dist/email-previews/password-reset.html
+npx nx run notification-service:preview-templates   # → dist/email-previews/index.html
 ```
 
-That writes under `dist/`, which is gitignored. If a hand-written table layout stops being enough, MJML or React Email slot in behind `renderEmailHtml` — that single function is the seam, so nothing else has to change.
+It renders through the real `NotificationService` handlers with an in-memory mail transport and
+repository, so a preview is exactly what would be sent. `index.html` links each template's HTML and
+text part, plus the stored (masked) copy where it differs.
+
+### notification-service
+
+Consumes auth events and records every delivery attempt in its own Postgres (`notification-db`,
+table `notifications`). It has **no notification HTTP API yet** — only `GET /api/health`. The
+guarded REST API is part of the parked internal-auth work; an unguarded one would let anyone send
+email as the app and read every user's address.
+
+A row is written as `PENDING` before the delivery attempt and updated to `SENT` or `FAILED`, so a
+crash mid-send leaves something visible. `SELECT * FROM notifications WHERE status = 'FAILED'` is
+the dead-letter view; there is no Kafka `.dlq` topic.
 
 ### API docs (Swagger)
-
-Services that expose a real HTTP API document it at `/api/docs`:
 
 | Service                | UI                               | OpenAPI JSON        |
 | ---------------------- | -------------------------------- | ------------------- |
 | `auth-service`         | `http://localhost:7000/api/docs` | `.../api/docs-json` |
-| `notification-service` | `http://localhost:7005/api/docs` | `.../api/docs-json` |
+| `notification-service` | `http://localhost:7001/api/docs` | `.../api/docs-json` |
 
-`customer-service`, `delivery-service` and `logging-service` are still stubs — a `GET /` and a `GET /health` — and have no Swagger setup or `ValidationPipe` at all, so there is nothing to document yet.
+### DB UI
 
-The setup is not repeated per service: `setupSwagger()` in `libs/src/lib/swagger/` is the single `DocumentBuilder` call, which is how the bearer scheme and version stay identical everywhere instead of drifting one service at a time. The same module holds the other two pieces every service shares:
-
-- **`ApiErrorDto`** — the body of _every_ non-2xx response, in one type. It is worth knowing that this envelope is not uniform before relying on it: `message` is an **array** when request validation failed and a **string** otherwise, and `error` is **absent** on errors thrown without a message (an expired token) and on the throttler's 429. Writing that down meant reading it off live responses rather than guessing — the schema is a `oneOf` for exactly that reason, and the `error` field is optional.
-- **Composed error decorators** (`ApiValidationError`, `ApiUnauthorizedError`, `ApiForbiddenError`, `ApiNotFoundError`, `ApiThrottledError`, `ApiServiceUnavailableError`) — so a route documents the failures it can actually return, with a description saying _why_, instead of a blanket 400/401/500 that tells an integrator nothing.
-
-Two details the docs now spell out because the code makes them true but surprising: `POST /api/auth/forgot-password` answers 204 whether or not the address is registered (it cannot be used to enumerate accounts), and `POST /api/auth/logout` revokes **every** token for the account, including the one that called it — verified end to end, `me` returns 200 before the logout and 401 after.
-
-### notification-service (delivery + history)
-
-The service that owns "actually send it", extracted so `auth-service` doesn't have to. It consumes domain events and records every delivery attempt in its own Postgres (`notification-db`). **Every route below requires a bearer token issued by auth-service.**
-
-| Route                        | What it does                                                                                                                                                                                 |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/notifications`    | Send one now (ad-hoc / admin use). `201` means the _record_ was created — read `status` in the body for the delivery outcome, so a failed send still leaves an audit row instead of a `500`. |
-| `GET /api/notifications`     | List what was sent, newest first. Filters: `channel`, `status`, `recipient`, `template`; paginate with `limit` (max 100) / `offset`.                                                         |
-| `GET /api/notifications/:id` | One record; `404` if unknown.                                                                                                                                                                |
-
-| `channel`     | Behaviour today                                                                                                                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `EMAIL`       | Delivered through nodemailer → Mailhog (or a real provider via the `MAIL_*` vars).                                                                                                         |
-| `SMS`, `PUSH` | No transport registered yet — the record is stored as `FAILED` with `error: "No transport registered for channel SMS yet"`, so the gap is visible in the API rather than silently dropped. |
-
-**This service has no Kafka `.dlq`, on purpose.** A failed delivery is already a persisted `FAILED` row, which is strictly more useful than a dead-letter message: `GET /api/notifications?status=FAILED` _is_ the dead-letter view, it's queryable and filterable, and it survives consumer restarts.
-
-**Auth.** `NotificationsController` is guarded by the shared `JwtAuthGuard` from `libs` — this service contains no auth code of its own beyond `imports: [SharedAuthModule]` and `@UseGuards(JwtAuthGuard)`. `GET /api/health` deliberately stays public so healthchecks keep working. See "Shared auth" above for the contract and the `JWT_SECRET` caveat.
-
-The reset-token template also persists a _masked_ body (`token=***`), so `GET /api/notifications` can't be used to harvest live reset tokens even by an authorized caller.
-
-Because this uses the shared verifier, it checks signature and expiry only — a token revoked in auth-service stays valid here until it expires (see "Shared auth" above).
-
-### DB / infrastructure UI tools
-
-- **pgAdmin** (`:43000`) — all 4 Postgres connections are pre-registered via `infrastructure/ui/servers.json`; you'll still be asked for the password once per session.
-- **mongo-express** (`:43001`) — pre-configured against `masr3-logging-db` via `infrastructure/ui/mongo-express.env`.
-- **RedisInsight** (`:43002`) — no reliable non-interactive provisioning; add the `masr3-redis:6379` connection by hand on first visit.
+- **pgAdmin** (`http://localhost:43000`) — both Postgres connections are pre-registered via
+  `infrastructure/ui/servers.json`; you are asked for the password once per session.
 
 ### Monitoring & tracing
 
-- **Prometheus** (`:44000`) scrapes only itself for now — no service exposes `/metrics` yet, only `/api/health`.
-- **Grafana** (`:44001`) auto-provisions the Prometheus datasource via `infrastructure/monitoring/provisioning/datasources/datasource.yml`.
-- **Jaeger** (`:44002` UI, `:44003` OTLP HTTP) — `jaegertracing/all-in-one`, in-memory storage. No service emits traces yet (no OpenTelemetry SDK wired); infrastructure is ready for when that's added.
+None. No service exposes `/metrics` — only `GET /api/health`.
 
 ### App services run on the host
 
-**What:** `auth-service`/`customer-service`/`delivery-service`/`logging-service`/`notification-service`/`user-service` are never run as docker containers — `docker-compose.yaml` only ever holds infrastructure (DBs, pgbouncer, kafka, UI tools, monitoring). Run a service with `npx nx serve auth-service`, or all of them with `pnpm dev:all`.
+`auth-service` and `notification-service` never run as containers — `docker-compose.yaml` holds
+only infrastructure. Run one with `npx nx serve auth-service`, or both with
+`npx nx run-many -t serve`. That gets Nx's webpack watch for free, with no image rebuilds.
 
-**Why:** running the app on the host gets Nx's webpack watch/HMR for free — edit-and-see-it-immediately, no image rebuild step. A docker container for the app would need a bind mount plus an anonymous volume for `node_modules` to get the same live-reload experience, for no real benefit over just running it on the host directly, since the app already talks to dockerized infrastructure over `localhost` either way.
+Each service's `.env` points at every dependency's _host-published_ port — pgbouncer at
+`localhost:41500`, Kafka at `localhost:42000` — never a docker-internal hostname. The same `.env`
+is therefore correct whether you run one service or both.
 
-**How:** each service's committed `.env` points at every dependency's _host-published_ port — pgbouncer at `localhost:41500`, Kafka at `localhost:42000`, peer services at their own `localhost:<port>` — never a docker-internal hostname like `masr3-pgbouncer`. That's what makes this work with zero per-developer configuration: the same `.env` is correct whether you're running one service or all of them, because everything (app included) talks to everything else over `localhost`.
-
-`apps/<service>/Dockerfile` (`build`/`runtime` stages — `nx build --configuration=production` baked into an image) still exists and still works if you ever need a real deployable image (e.g. `docker build --target runtime ...` for an actual deployment target) — it's just not part of the local `docker-compose.yaml` stack.
+`apps/auth-service/Dockerfile` still builds a deployable image if you need one; it is not part of
+the local stack.
 
 ### Healthchecks
 
-Every infrastructure container has a `HEALTHCHECK`/compose healthcheck: `pg_isready` per Postgres, `mongosh` ping for Mongo, `redis-cli ping` for Redis, a broker API-versions check for Kafka, a TCP check for pgbouncer. Docker isn't waiting on app services (there aren't any); app-level health is `GET /api/health` on whichever service you've started with `nx serve`.
+Each infrastructure container that can report health does: `pg_isready` per Postgres, a broker
+API-versions check on the internal listener for Kafka, and a TCP check for pgbouncer. App health is
+`GET /api/health` on each service, deliberately public — a probe that needs a token is a restart
+loop, not a security improvement.
 
 [Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/nest?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
 

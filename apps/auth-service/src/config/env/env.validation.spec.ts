@@ -25,6 +25,9 @@ const validEnv = {
 
   THROTTLE_LONG_TTL_MS: '60000',
   THROTTLE_LONG_LIMIT: '100',
+
+  KAFKA_BROKER: 'localhost:42000',
+  KAFKA_CLIENT_ID: 'auth-service',
 };
 
 describe('validate', () => {
@@ -85,6 +88,8 @@ describe('validate', () => {
       'THROTTLE_MEDIUM_LIMIT',
       'THROTTLE_LONG_TTL_MS',
       'THROTTLE_LONG_LIMIT',
+      'KAFKA_BROKER',
+      'KAFKA_CLIENT_ID',
     ])('throws when %s is missing', (property) => {
       const config = { ...validEnv };
 

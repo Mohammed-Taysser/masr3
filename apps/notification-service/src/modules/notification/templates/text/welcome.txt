@@ -1,0 +1,3 @@
+Your {{appName}} account is ready. You signed up with {{email}}. That's where we'll send anything important about your account.
+
+There's nothing else to set up. Sign in whenever you're ready.

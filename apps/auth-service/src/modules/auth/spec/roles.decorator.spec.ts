@@ -7,7 +7,9 @@ describe('Roles decorator', () => {
   it('sets the roles metadata on the handler', () => {
     class Target {
       @Roles(UserRoleEnum.ADMIN)
-      handler() {}
+      handler() {
+        // Exists only to carry the decorator.
+      }
     }
 
     const metadata = Reflect.getMetadata(ROLES_KEY, Target.prototype.handler);
@@ -18,7 +20,9 @@ describe('Roles decorator', () => {
   it('supports multiple roles', () => {
     class Target {
       @Roles(UserRoleEnum.ADMIN, UserRoleEnum.RIDER)
-      handler() {}
+      handler() {
+        // Exists only to carry the decorator.
+      }
     }
 
     const metadata = Reflect.getMetadata(ROLES_KEY, Target.prototype.handler);
@@ -29,7 +33,9 @@ describe('Roles decorator', () => {
   it('sets an empty array when called with no roles', () => {
     class Target {
       @Roles()
-      handler() {}
+      handler() {
+        // Exists only to carry the decorator.
+      }
     }
 
     const metadata = Reflect.getMetadata(ROLES_KEY, Target.prototype.handler);

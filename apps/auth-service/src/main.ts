@@ -1,13 +1,14 @@
 import 'reflect-metadata';
+
 import {
   ClassSerializerInterceptor,
   Logger,
   ValidationPipe,
 } from '@nestjs/common';
-import { NestFactory, Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import AppModule from './app/app.module';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import AppModule from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +17,8 @@ async function bootstrap() {
   const globalPrefix = 'api';
 
   app.setGlobalPrefix(globalPrefix);
+
+  app.enableShutdownHooks();
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
@@ -46,8 +49,10 @@ async function bootstrap() {
   Logger.log(
     `🚀 Application is running on: http://localhost:${port}/${globalPrefix}`,
   );
-  Logger.log(`📘 Swagger UI: http://localhost:${port}/docs`);
-  Logger.log(`📄 OpenAPI JSON: http://localhost:${port}/docs-json`);
+  Logger.log(`📘 Swagger UI: http://localhost:${port}/${globalPrefix}/docs`);
+  Logger.log(
+    `📄 OpenAPI JSON: http://localhost:${port}/${globalPrefix}/docs-json`,
+  );
 }
 
 bootstrap();

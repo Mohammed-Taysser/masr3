@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 
+import { dayjs } from '@masr3/libs';
+
 import UserEntity from '../../users/entities/user.entity';
 import { JwtPayload } from '../auth.interface';
 
@@ -21,7 +23,7 @@ class TokenService {
       tokenVersion: user.tokenVersion,
     };
 
-    return this.jwtService.sign(payload)
+    return this.jwtService.sign(payload);
   }
 
   createResetToken(): { token: string; tokenHash: string } {
@@ -39,7 +41,7 @@ class TokenService {
       'PASSWORD_RESET_TOKEN_TTL_MS',
     );
 
-    return new Date(Date.now() + ttlMs);
+    return dayjs().add(ttlMs, 'millisecond').toDate();
   }
 }
 

@@ -3,16 +3,18 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
+import KafkaModule from '../../kafka/kafka.module';
+import UsersModule from '../users/users.module';
 import AuthController from './auth.controller';
 import AuthService from './auth.service';
 import PasswordService from './services/password.service';
 import TokenService from './services/token.service';
 import JwtStrategy from './strategies/jwt.strategy';
-import UsersModule from '../users/users.module';
 
 @Module({
   imports: [
     UsersModule,
+    KafkaModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

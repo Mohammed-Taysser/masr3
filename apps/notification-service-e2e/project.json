@@ -12,6 +12,14 @@
         "jestConfig": "apps/notification-service-e2e/jest.config.cts",
         "passWithNoTests": true
       }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+      }
     }
   }
 }

@@ -1,11 +1,21 @@
 name: masr3
 
 # Port convention (host-published only; container-internal ports keep image defaults):
-#   41000-41099  databases (postgres/mongo/redis)   42000-42099  messaging (kafka/kafka-ui)
-#   41500        pgbouncer                          43000-43099  db/infrastructure ui tools
-#   44000-44099  monitoring/tracing                 45000-45099  dev-only tools
+#   41000-41099  databases
+#   41500       pgbouncer
+#   42000-42099  kafka
+#   43000-43099  db/infra ui
+#   45000-45099  dev-only tools
 #
-# Infrastructure only — no app services here.
+# Infrastructure only — no application services here.
+#
+# All infrastructure services share the "masr3-network" network.
+# Application services can join this network from their own Compose files
+# using:
+#
+# networks:
+#   masr3-network:
+#     external: true
 
 services:
   # ========================================
@@ -16,69 +26,239 @@ services:
     image: postgres:16-alpine
     container_name: masr3-auth-db
     restart: unless-stopped
-    env_file: apps/auth-service/db.env
+
+    env_file:
+      - ./apps/auth-service/db.env
+
     ports:
       - '41000:5432'
+
     volumes:
       - masr3_auth_db_data:/var/lib/postgresql/data
+
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+
+    networks:
+      - masr3-network
+
+  notification-db:
+    image: postgres:16-alpine
+    container_name: masr3-notification-db
+    restart: unless-stopped
+
+    env_file:
+      - ./apps/notification-service/db.env
+
+    ports:
+      - '41001:5432'
+
+    volumes:
+      - masr3_notification_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
     networks:
       - masr3-network
 
   # ========================================
-  # pgbouncer (fronts all 4 postgres instances)
+  # PgBouncer
   # ========================================
+  #
+  # PgBouncer fronts the PostgreSQL instances.
+  #
+  # Container-internal address:
+  #   masr3-pgbouncer:6432
+  #
+  # Host address:
+  #   localhost:41500
+  #
+  # PgBouncer must use Docker DNS names for PostgreSQL:
+  #   masr3-auth-db:5432
+  #   masr3-notification-db:5432
+  #
 
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: masr3-pgbouncer
     restart: unless-stopped
+
     ports:
       - '41500:6432'
+
     volumes:
       - ./infrastructure/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./infrastructure/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
-    healthcheck:
-      test: ['CMD-SHELL', 'nc -z 127.0.0.1 6432 || exit 1']
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
     depends_on:
       auth-db:
         condition: service_healthy
+      notification-db:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'nc -z 127.0.0.1 6432 || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
     networks:
       - masr3-network
 
   # ========================================
-  # DB / infrastructure UI tools
+  # DB / Infrastructure UI
   # ========================================
 
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: masr3-pgadmin
     restart: unless-stopped
-    env_file: infrastructure/ui/pgadmin.env
+
+    env_file:
+      - ./infrastructure/ui/pgadmin.env
+
     ports:
       - '43000:80'
+
     volumes:
       - masr3_pgadmin_data:/var/lib/pgadmin
       - ./infrastructure/ui/servers.json:/pgadmin4/servers.json:ro
+
     depends_on:
       auth-db:
+        condition: service_healthy
+      notification-db:
         condition: service_healthy
 
     networks:
       - masr3-network
 
+  # ========================================
+  # Messaging
+  # ========================================
+
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: masr3-kafka
+    restart: unless-stopped
+
+    env_file:
+      - ./infrastructure/kafka.env
+
+    ports:
+      - '42000:9094'
+
+    volumes:
+      - masr3_kafka_data:/var/lib/kafka/data
+
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - masr3-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: masr3-kafka-ui
+    restart: unless-stopped
+
+    environment:
+      KAFKA_CLUSTERS_0_NAME: masr3
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: masr3-kafka:9092
+
+    ports:
+      - '42001:8080'
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    networks:
+      - masr3-network
+
+  # ========================================
+  # Dev-only tools
+  # ========================================
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: masr3-mailhog
+    restart: unless-stopped
+
+    ports:
+      - '45000:1025'
+      - '45001:8025'
+
+    networks:
+      - masr3-network
+
+# ========================================
+# Volumes
+# ========================================
+
 volumes:
   masr3_auth_db_data:
+    name: masr3_auth_db_data
+
+  masr3_notification_db_data:
+    name: masr3_notification_db_data
+
+  masr3_kafka_data:
+    name: masr3_kafka_data
+
   masr3_pgadmin_data:
+    name: masr3_pgadmin_data
+
+# ========================================
+# Shared Network
+# ========================================
+#
+# Explicit "name" is important.
+#
+# Without it, Compose creates something like:
+#   masr3_masr3-network
+#
+# With it, the actual Docker network is:
+#   masr3-network
+#
+# Separate application Compose projects can therefore use:
+#
+# networks:
+#   masr3-network:
+#     external: true
+#
 
 networks:
   masr3-network:
+    name: masr3-network
     driver: bridge

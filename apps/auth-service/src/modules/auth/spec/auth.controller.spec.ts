@@ -1,3 +1,5 @@
+import { Request } from 'express';
+
 import AuthController from '../auth.controller';
 import AuthService from '../auth.service';
 
@@ -137,7 +139,7 @@ describe('AuthController', () => {
         user: {
           id: userId,
         },
-      } as any;
+      } as unknown as Request;
 
       const result = await controller.changePassword(request, dto);
 
@@ -162,7 +164,7 @@ describe('AuthController', () => {
         user: {
           id: userId,
         },
-      } as any;
+      } as unknown as Request;
 
       const result = await controller.me(request);
 
@@ -185,7 +187,7 @@ describe('AuthController', () => {
         user: {
           id: userId,
         },
-      } as any;
+      } as unknown as Request;
 
       const result = await controller.logout(request);
 

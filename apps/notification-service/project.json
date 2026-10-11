@@ -66,6 +66,44 @@
       "options": {
         "passWithNoTests": true
       }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/notification-service/tsconfig.app.json typeorm-ts-node-commonjs migration:run -d apps/notification-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "if [ -z \"{args.name}\" ]; then echo 'Error: migration name is required. Usage: nx run notification-service:migrate-generate --name=CreateUsers'; exit 1; fi; TS_NODE_PROJECT=apps/notification-service/tsconfig.app.json typeorm-ts-node-commonjs migration:generate apps/notification-service/src/database/migrations/{args.name} -d apps/notification-service/src/database/data-source.ts"
+      }
+    },
+    "migrate-revert": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/notification-service/tsconfig.app.json typeorm-ts-node-commonjs migration:revert -d apps/notification-service/src/database/data-source.ts"
+      }
+    },
+    "preview-templates": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/notification-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/notification-service/scripts/preview-templates.ts"
+      }
+    },
+    "migration-show": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/notification-service/tsconfig.app.json typeorm-ts-node-commonjs migration:show -d apps/notification-service/src/database/data-source.ts"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.app.json && tsc --noEmit -p {projectRoot}/tsconfig.spec.json"
+      }
     }
   }
 }

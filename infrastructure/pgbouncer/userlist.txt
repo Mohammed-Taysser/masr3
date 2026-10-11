@@ -1,1 +1,2 @@
 "auth" "auth_user_password"
+"notification" "notification_user_password"
