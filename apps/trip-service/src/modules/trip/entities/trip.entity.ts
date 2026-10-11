@@ -8,6 +8,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+import { TripStatusEnum, TripTypeEnum } from '@masr3/libs';
+
 import { decimalTransformer } from '../../../shared/transformers/decimal.transformer';
 import {
   CUSTOMER_ACTIVE_TRIP_STATUSES,
@@ -17,7 +19,6 @@ import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
-import { TripStatusEnum, TripTypeEnum } from '../trip.enum';
 
 const statusIn = (statuses: readonly TripStatusEnum[]) =>
   `"status" IN (${statuses.map((status) => `'${status}'`).join(', ')})`;

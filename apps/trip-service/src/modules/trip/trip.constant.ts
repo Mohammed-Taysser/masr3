@@ -1,4 +1,4 @@
-import { TripActorEnum, TripStatusEnum } from './trip.enum';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
 
 const TRIP_CURRENCY = 'EGP';
 

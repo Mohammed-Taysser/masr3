@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { TripActorEnum, TripStatusEnum } from '../trip.enum';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
 import TripEntity from './trip.entity';
 
 @Entity('trip_status_history')

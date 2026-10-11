@@ -4,9 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
+
 import TripEntity from './entities/trip.entity';
 import { TRIP_TRANSITIONS } from './trip.constant';
-import { TripActorEnum, TripStatusEnum } from './trip.enum';
 
 function isOwner(
   trip: Pick<TripEntity, 'customerId' | 'driverId'>,

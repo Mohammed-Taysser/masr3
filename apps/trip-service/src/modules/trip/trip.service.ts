@@ -5,9 +5,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 
-import { dayjs } from '@masr3/libs';
+import {
+  dayjs,
+  TripActorEnum,
+  TripKafkaTopic,
+  TripStatusChangedEvent,
+  TripStatusEnum,
+} from '@masr3/libs';
+
+import OutboxService from '../outbox/outbox.service';
 
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
@@ -16,7 +25,6 @@ import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from './trip.constant';
-import { TripActorEnum, TripStatusEnum } from './trip.enum';
 import { CreateTripCommand, TransitionTripCommand } from './trip.interface';
 import { assertTransitionAllowed } from './trip.policy';
 
@@ -25,6 +33,7 @@ class TripService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
+    private readonly outboxService: OutboxService,
     @InjectRepository(TripStatusHistoryEntity)
     private readonly historyRepository: Repository<TripStatusHistoryEntity>,
   ) {}
@@ -50,6 +59,19 @@ class TripService {
           actorId: command.customerId,
           reason: null,
         });
+
+        await this.outboxService.enqueue(
+          manager,
+          TripKafkaTopic.STATUS_CHANGED,
+          TripService.buildStatusChangedEvent(
+            trip,
+            null,
+            TripActorEnum.CUSTOMER,
+            command.customerId,
+            null,
+          ),
+          String(trip.id),
+        );
 
         return trip;
       });
@@ -95,7 +117,24 @@ class TripService {
           reason,
         });
 
-        return manager.findOneByOrFail(TripEntity, { id: tripId });
+        const updated = await manager.findOneByOrFail(TripEntity, {
+          id: tripId,
+        });
+
+        await this.outboxService.enqueue(
+          manager,
+          TripKafkaTopic.STATUS_CHANGED,
+          TripService.buildStatusChangedEvent(
+            updated,
+            trip.status,
+            actor,
+            actorId,
+            reason,
+          ),
+          String(tripId),
+        );
+
+        return updated;
       });
     } catch (error) {
       if (TripService.isUniqueViolation(error, UQ_TRIPS_ACTIVE_DRIVER)) {
@@ -111,6 +150,30 @@ class TripService {
       where: { tripId },
       order: { createdAt: 'ASC', id: 'ASC' },
     });
+  }
+
+  private static buildStatusChangedEvent(
+    trip: TripEntity,
+    fromStatus: TripStatusEnum | null,
+    actor: TripActorEnum,
+    actorId: number | null,
+    reason: string | null,
+  ): TripStatusChangedEvent {
+    return {
+      eventId: randomUUID(),
+      occurredAt: dayjs().toISOString(),
+      tripId: trip.id,
+      type: trip.type,
+      customerId: trip.customerId,
+      driverId: trip.driverId ?? null,
+      fromStatus,
+      toStatus: trip.status,
+      actor,
+      actorId,
+      reason,
+      proposedFare: trip.proposedFare,
+      agreedFare: trip.agreedFare ?? null,
+    };
   }
 
   private static isUniqueViolation(error: unknown, index: string): boolean {

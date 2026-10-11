@@ -1,5 +1,6 @@
+import { TripActorEnum, TripStatusEnum, TripTypeEnum } from '@masr3/libs';
+
 import TripEntity from './entities/trip.entity';
-import { TripActorEnum, TripStatusEnum, TripTypeEnum } from './trip.enum';
 
 interface CreateTripCommand {
   customerId: number;

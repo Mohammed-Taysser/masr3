@@ -41,6 +41,9 @@ All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `loca
   write a replacement.
 - A migration that has not been committed may be reverted, deleted and regenerated. A committed
   one never is: add a new migration instead.
+- If a service's entities import `@masr3/libs`, its `migrate*` targets need
+  `TS_NODE_BASEURL="$PWD" NODE_OPTIONS="-r tsconfig-paths/register"`, as trip-service has.
+  Without it the CLI fails with "Cannot find module '@masr3/libs'".
 
 ## Code style
 
@@ -151,8 +154,10 @@ apps/<svc>/
 
   Never write status from anywhere else (see `TripService.transition`).
 
-- **pgbouncer** runs in `transaction` mode. Avoid session state: advisory locks, `LISTEN` /
-  `NOTIFY`, and prepared statements that span transactions.
+- **pgbouncer** runs in `transaction` mode. Avoid session state: session advisory locks
+  (`pg_advisory_lock`), `LISTEN` / `NOTIFY`, and prepared statements that span transactions.
+  Transaction-scoped advisory locks (`pg_try_advisory_xact_lock`) are fine, because they are
+  released at commit.
 
 ## API (controllers + DTOs)
 
@@ -198,6 +203,15 @@ apps/<svc>/
   - A delivery failure is recorded as a `FAILED` row.
   - Anything else is rethrown, so the offset is not committed.
 - **Topic creation:** a service's `kafka:create-topics` target list must match its topic enum.
+- **Choosing how to publish:**
+  - **Events that must not be lost or invented** (state changes other services rely on) go
+    through a transactional outbox. Follow
+    [`docs/patterns/transactional-outbox.md`](docs/patterns/transactional-outbox.md); trip-service
+    is the reference.
+  - **Best-effort direct publishing** is only for events whose loss is harmless, like
+    auth-service's sign-in alerts.
+- **One topic per aggregate** (e.g. `trip.status-changed`) when consumers need its events in
+  order. Kafka orders messages only within a partition, never across topics.
 
 ## Tests
 
@@ -242,6 +256,8 @@ apps/<svc>/
 
 - `README.md` describes only **what exists on `main`**. Planned work goes in
   `apps/<svc>/docs/design.md` and moves to the README when built.
+- Cross-service patterns are written up in `docs/patterns/` (e.g. `transactional-outbox.md`) and
+  linked from where they are used.
 - Commit messages use the `feat:` / `refactor:` / `chore:` prefixes. Commit only when asked, and
   keep unrelated changes (e.g. an auth-service rename) in their own commit.
 - Park large in-progress work as a commit on a `wip/*` branch, not `git stash`.

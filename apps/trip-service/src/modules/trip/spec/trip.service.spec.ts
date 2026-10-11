@@ -11,15 +11,21 @@ import {
   Repository,
 } from 'typeorm';
 
-import { dayjs } from '@masr3/libs';
+import {
+  dayjs,
+  TripActorEnum,
+  TripKafkaTopic,
+  TripStatusEnum,
+  TripTypeEnum,
+} from '@masr3/libs';
 
+import OutboxService from '../../outbox/outbox.service';
 import TripStatusHistoryEntity from '../entities/trip-status-history.entity';
 import TripEntity from '../entities/trip.entity';
 import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
-import { TripActorEnum, TripStatusEnum, TripTypeEnum } from '../trip.enum';
 import { CreateTripCommand } from '../trip.interface';
 import TripService from '../trip.service';
 
@@ -37,6 +43,7 @@ describe('TripService', () => {
   let manager: jest.Mocked<EntityManager>;
   let dataSource: jest.Mocked<DataSource>;
   let historyRepository: jest.Mocked<Repository<TripStatusHistoryEntity>>;
+  let outboxService: jest.Mocked<OutboxService>;
 
   const command: CreateTripCommand = {
     customerId: 1,
@@ -81,7 +88,16 @@ describe('TripService', () => {
       getOrThrow: jest.fn().mockReturnValue(TTL_MS),
     } as unknown as ConfigService;
 
-    service = new TripService(dataSource, configService, historyRepository);
+    outboxService = {
+      enqueue: jest.fn(),
+    } as unknown as jest.Mocked<OutboxService>;
+
+    service = new TripService(
+      dataSource,
+      configService,
+      outboxService,
+      historyRepository,
+    );
   });
 
   afterEach(() => {
@@ -110,6 +126,31 @@ describe('TripService', () => {
         reason: null,
       });
       expect(result.id).toBe(trip.id);
+    });
+
+    it('enqueues a REQUESTED status-changed event in the same transaction', async () => {
+      await service.create(command);
+
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        manager,
+        TripKafkaTopic.STATUS_CHANGED,
+        expect.objectContaining({
+          eventId: expect.any(String),
+          occurredAt: expect.any(String),
+          tripId: trip.id,
+          type: TripTypeEnum.RIDE,
+          customerId: command.customerId,
+          driverId: null,
+          fromStatus: null,
+          toStatus: TripStatusEnum.REQUESTED,
+          actor: TripActorEnum.CUSTOMER,
+          actorId: command.customerId,
+          reason: null,
+          proposedFare: command.proposedFare,
+          agreedFare: null,
+        }),
+        String(trip.id),
+      );
     });
 
     it('expires the request after TRIP_REQUEST_TTL_MS', async () => {
@@ -193,6 +234,19 @@ describe('TripService', () => {
         reason: null,
       });
       expect(result).toBe(accepted);
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        manager,
+        TripKafkaTopic.STATUS_CHANGED,
+        expect.objectContaining({
+          tripId: trip.id,
+          driverId: 2,
+          agreedFare: 90,
+          fromStatus: TripStatusEnum.REQUESTED,
+          toStatus: TripStatusEnum.ACCEPTED,
+          actor: TripActorEnum.CUSTOMER,
+        }),
+        String(trip.id),
+      );
     });
 
     it('writes nothing when the move is not allowed', async () => {
@@ -209,6 +263,7 @@ describe('TripService', () => {
 
       expect(manager.update).not.toHaveBeenCalled();
       expect(manager.insert).not.toHaveBeenCalled();
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
     });
 
     it('turns the active-driver index violation into a conflict', async () => {

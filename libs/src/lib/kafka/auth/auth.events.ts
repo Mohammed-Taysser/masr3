@@ -1,8 +1,7 @@
+import { BaseKafkaEvent } from '../kafka.events';
 import { AuthKafkaTopic } from './auth.topics';
 
-interface BaseAuthEvent {
-  eventId: string;
-  occurredAt: string;
+interface BaseAuthEvent extends BaseKafkaEvent {
   userId: number;
   email: string;
   firstName: string;

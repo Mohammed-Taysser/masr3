@@ -16,6 +16,13 @@ const validEnv = {
 
   TRIP_REQUEST_TTL_MS: '600000',
 
+  KAFKA_BROKER: 'localhost:42000',
+  KAFKA_CLIENT_ID: 'trip-service',
+
+  OUTBOX_POLL_INTERVAL_MS: '1000',
+  OUTBOX_BATCH_SIZE: '100',
+  OUTBOX_RETENTION_MS: '604800000',
+
   AUTH_SERVICE_URL: 'http://localhost:7000/api',
 };
 
@@ -62,14 +69,21 @@ describe('validate', () => {
       'POSTGRES_USER',
       'POSTGRES_PASSWORD',
       'POSTGRES_DB',
+      'KAFKA_BROKER',
+      'KAFKA_CLIENT_ID',
     ])('rejects an empty %s', (property) => {
       expect(() => validate({ ...validEnv, [property]: '' })).toThrow();
     });
   });
 
-  describe('TRIP_REQUEST_TTL_MS', () => {
-    it.each(['0', '-1', 'ten-minutes'])('rejects %p', (TRIP_REQUEST_TTL_MS) => {
-      expect(() => validate({ ...validEnv, TRIP_REQUEST_TTL_MS })).toThrow();
+  describe.each([
+    'TRIP_REQUEST_TTL_MS',
+    'OUTBOX_POLL_INTERVAL_MS',
+    'OUTBOX_BATCH_SIZE',
+    'OUTBOX_RETENTION_MS',
+  ])('%s', (property) => {
+    it.each(['0', '-1', 'soon'])('rejects %p', (value) => {
+      expect(() => validate({ ...validEnv, [property]: value })).toThrow();
     });
   });
 

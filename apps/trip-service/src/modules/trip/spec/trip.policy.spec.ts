@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
+
 import { TRIP_TRANSITIONS } from '../trip.constant';
-import { TripActorEnum, TripStatusEnum } from '../trip.enum';
 import { assertTransitionAllowed } from '../trip.policy';
 
 const CUSTOMER_ID = 1;

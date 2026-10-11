@@ -59,6 +59,26 @@ class EnvironmentVariables {
   @Min(1)
   TRIP_REQUEST_TTL_MS: number;
 
+  @IsString()
+  @MinLength(1)
+  KAFKA_BROKER: string;
+
+  @IsString()
+  @MinLength(1)
+  KAFKA_CLIENT_ID: string;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_POLL_INTERVAL_MS: number;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_BATCH_SIZE: number;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_RETENTION_MS: number;
+
   @IsUrl({ require_tld: false, require_protocol: true })
   @Matches(AUTH_SERVICE_URL_PATTERN)
   AUTH_SERVICE_URL: string;

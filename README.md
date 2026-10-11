@@ -34,6 +34,7 @@ openssl rand -hex 32                                              # client secre
 
 npx nx run-many -t migrate                                        # schema for every service
 npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
+npx nx run trip-service:kafka:create-topics
 
 npx nx run-many -t serve                                          # run all on the host
 ```
@@ -51,6 +52,7 @@ Useful individual targets:
 | `npx nx run <service>:migrate-revert`                   | Revert the last migration                                                    |
 | `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                    |
 | `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                         |
+| `npx nx run trip-service:kafka:create-topics`           | Create `trip.status-changed`, idempotently                                   |
 | `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites) |
 | `npx nx run notification-service:preview-templates`     | Render every email to `dist/email-previews/` with an index.html              |
 
@@ -145,7 +147,8 @@ Each service's own DB credentials do **not** live here — see below.
 - **`apps/<service>/.env`** — real values, **gitignored**. Copy from the committed `.env.example`.
   Holds what is specific to that service: `PORT`, `SERVICE_NAME` (reported by `GET /api/health`), `DATABASE_HOST`/`DATABASE_PORT`, `KAFKA_BROKER`
   and its own `KAFKA_CLIENT_ID`. notification-service adds `APP_NAME`, `MAIL_*`,
-  `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`. Every variable is checked at boot by
+  `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`; trip-service adds `TRIP_REQUEST_TTL_MS`
+  and `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` / `OUTBOX_RETENTION_MS`. Every variable is checked at boot by
   that service's `config/env/env.validation.ts`; a missing one fails startup rather than surfacing
   later as `undefined`.
 - **`apps/<service>/db.env`** — that service's database credentials
@@ -218,7 +221,9 @@ Do not advertise `localhost:9092` for host clients: it sends them to whatever el
 `allowAutoTopicCreation: false` on both clients, so a typo'd topic name fails instead of silently
 creating a topic nobody consumes. `npx nx run auth-service:kafka:create-topics` runs the Kafka CLI
 inside the broker container (nothing to install on the host) and is safe to re-run. Its list must
-stay in sync with `AuthKafkaTopic` in `libs/src/lib/kafka/auth/auth.topics.ts`.
+stay in sync with `AuthKafkaTopic` in `libs/src/lib/kafka/auth/auth.topics.ts`. `npx nx run trip-service:kafka:create-topics`
+(`apps/trip-service/scripts/kafka-create-topics.sh`) works the same way, and its list must stay in sync
+with `TripKafkaTopic` in `libs/src/lib/kafka/trip/trip.topics.ts`.
 
 `auth.password-reset-requested` carries the raw reset token (the email needs a working link), so
 that topic is created with `retention.ms=3600000` — the token is useless after
@@ -235,6 +240,10 @@ that topic is created with `retention.ms=3600000` — the token is useless after
 | `auth.user-change-password`     | `changePassword()` | "Your password was changed"            |
 | `auth.password-reset-requested` | `forgetPassword()` | The reset email (masked copy stored)   |
 | `auth.password-reset-completed` | `resetPassword()`  | "Your password has been reset"         |
+
+**trip-service** produces one topic, `trip.status-changed`, keyed by `tripId`. It publishes
+through its outbox (see "trip-service" below), not best-effort, and nothing consumes it yet. Its
+payload is `TripStatusChangedEvent` in `libs`.
 
 Every event carries `eventId` (a UUID) and `occurredAt`, and is keyed by `userId`, so one user's
 events stay on one partition and are consumed in order. Payloads are typed by `AuthEventMap` in
@@ -366,6 +375,14 @@ counter-offer). Today it is the schema, the domain core and a health probe: tabl
 - One active trip per customer and per driver, enforced by the partial unique indexes
   `UQ_trips_active_customer` / `UQ_trips_active_driver`.
 - `TRIP_REQUEST_TTL_MS` sets `expiresAt` on new trips. Nothing expires them yet.
+- **Every status change is published to `trip.status-changed` through a transactional outbox.**
+  - The event row is written in the same transaction as the change.
+  - `OutboxRelayService` sends pending rows to Kafka in order and retries until Kafka accepts
+    them.
+  - Nothing is lost while Kafka is down; the rows wait. See
+    [`docs/patterns/transactional-outbox.md`](docs/patterns/transactional-outbox.md).
+  - Pending or failing events:
+    `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER BY id`.
 
 The planned lifecycle, bidding, concurrency, outbox, live location (WebSocket + Redis) and expiry
 are in [`apps/trip-service/docs/design.md`](apps/trip-service/docs/design.md).

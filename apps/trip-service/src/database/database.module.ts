@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import TripStatusHistoryEntity from '../modules/trip/entities/trip-status-history.entity';
+import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
 import TripEntity from '../modules/trip/entities/trip.entity';
 
 @Module({
@@ -16,7 +17,7 @@ import TripEntity from '../modules/trip/entities/trip.entity';
         username: configService.get<string>('POSTGRES_USER'),
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
-        entities: [TripEntity, TripStatusHistoryEntity],
+        entities: [TripEntity, TripStatusHistoryEntity, OutboxEventEntity],
         synchronize: false,
       }),
     }),
