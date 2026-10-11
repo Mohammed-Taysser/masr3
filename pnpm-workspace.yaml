@@ -5,3 +5,4 @@ allowBuilds:
   nx: true
   unrs-resolver: true
   '@nestjs/core': false
+  msgpackr-extract: false

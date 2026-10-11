@@ -30,7 +30,7 @@ in the **same** transaction as the state change. A separate relay copies rows to
    INSERT outbox_events       (the event, as a row)               │
  ─────────────────────────────────────────────────────────────────┘
             ▼  later, separately
- OutboxRelayService (one tick per OUTBOX_POLL_INTERVAL_MS)
+ OutboxRelayService (a BullMQ RELAY job every OUTBOX_POLL_INTERVAL_MS)
    lock → read pending rows by id → send to Kafka → mark publishedAt
    Kafka fails → rows stay pending, attempts/lastError recorded, retried next tick
 ```
@@ -40,7 +40,8 @@ both failure cases.
 
 ## The relay, step by step
 
-Each tick is one Postgres transaction:
+A BullMQ job scheduler adds a `RELAY` job every `OUTBOX_POLL_INTERVAL_MS`, and
+`OutboxRelayProcessor` runs each one. Each run ("tick") is one Postgres transaction:
 
 1. **`SELECT pg_try_advisory_xact_lock(OUTBOX_RELAY_LOCK_ID)`.** If it returns false, another
    instance is relaying right now, so this tick does nothing. Only one relay ever publishes at a
@@ -56,7 +57,8 @@ Each tick is one Postgres transaction:
      overtake it, because skipping would break order.
 5. **Purge** rows published more than `OUTBOX_RETENTION_MS` ago.
 
-Ticks never overlap: the next one is scheduled only after the previous one finishes. The producer
+Ticks don't overlap within an instance: the processor runs with concurrency 1. Across instances
+the advisory lock in step 1 does the same job. The producer
 also helps keep order:
 
 - It is idempotent, with one request in flight, so a kafkajs-level retry can't reorder or
@@ -82,7 +84,8 @@ Verified on trip-service:
 
 ## Costs
 
-- An extra table and a background loop per service.
+- An extra table, and a scheduled BullMQ job, per service. Publishing pauses while Redis is down;
+  nothing is lost, because the rows wait in Postgres.
 - Latency of up to one poll interval (about 1 s by default) between commit and Kafka.
 - A batch that can never be sent (for example a missing topic) blocks everything behind it. That
   is deliberate, and it is visible: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER BY id`.
@@ -111,7 +114,9 @@ is shared between clients at transaction boundaries.
 3. **Enqueue inside the business transaction:** call `outboxService.enqueue(manager, topic, event, key)`
    with the **transaction's** `manager`, never a repository. Otherwise the row escapes the
    transaction.
-4. **Relay and producer:** copy `outbox-relay.service.ts` and `kafka/kafka-producer.service.ts`.
+4. **Relay and producer:** copy `outbox-relay.service.ts`, `outbox-relay.processor.ts` and
+   `kafka/kafka-producer.service.ts`, plus `queue/queue.module.ts` for the Redis connection
+   (`REDIS_HOST` / `REDIS_PORT`).
    Give the service its own `OUTBOX_RELAY_LOCK_ID`. Advisory locks are per database, so this only
    matters if two services ever share one, but distinct ids cost nothing.
 5. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `OUTBOX_POLL_INTERVAL_MS`,

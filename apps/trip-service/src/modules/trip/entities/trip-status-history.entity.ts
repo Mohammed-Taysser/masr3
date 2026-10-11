@@ -47,7 +47,7 @@ class TripStatusHistoryEntity {
   @Column({ type: 'varchar', nullable: true })
   reason: string | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }
 

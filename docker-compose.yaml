@@ -30,6 +30,12 @@ services:
     env_file:
       - ./apps/auth-service/db.env
 
+    # Server and container clock in UTC; timestamptz values are stored as UTC regardless.
+    environment:
+      TZ: UTC
+
+    command: ['postgres', '-c', 'timezone=UTC', '-c', 'log_timezone=UTC']
+
     ports:
       - '41000:5432'
 
@@ -37,11 +43,7 @@ services:
       - masr3_auth_db_data:/var/lib/postgresql/data
 
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
-        ]
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -58,6 +60,12 @@ services:
     env_file:
       - ./apps/notification-service/db.env
 
+    # Server and container clock in UTC; timestamptz values are stored as UTC regardless.
+    environment:
+      TZ: UTC
+
+    command: ['postgres', '-c', 'timezone=UTC', '-c', 'log_timezone=UTC']
+
     ports:
       - '41001:5432'
 
@@ -65,11 +73,7 @@ services:
       - masr3_notification_db_data:/var/lib/postgresql/data
 
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
-        ]
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -86,6 +90,12 @@ services:
     env_file:
       - ./apps/trip-service/db.env
 
+    # Server and container clock in UTC; timestamptz values are stored as UTC regardless.
+    environment:
+      TZ: UTC
+
+    command: ['postgres', '-c', 'timezone=UTC', '-c', 'log_timezone=UTC']
+
     ports:
       - '41002:5432'
 
@@ -93,11 +103,7 @@ services:
       - masr3_trip_db_data:/var/lib/postgresql/data
 
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"',
-        ]
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -145,11 +151,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'nc -z 127.0.0.1 6432 || exit 1',
-        ]
+      test: ['CMD-SHELL', 'nc -z 127.0.0.1 6432 || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -240,6 +242,61 @@ services:
       - masr3-network
 
   # ========================================
+  # Queues
+  # ========================================
+
+  # BullMQ's store. AOF persistence keeps delayed jobs across restarts, and
+  # BullMQ requires noeviction: an evicted key is a lost job.
+  redis:
+    image: redis:7.4-alpine
+    container_name: masr3-redis
+    restart: unless-stopped
+
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+
+    ports:
+      - '44000:6379'
+
+    volumes:
+      - masr3_redis_data:/data
+
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - masr3-network
+
+  bull-board:
+    image: venatum/bull-board:3.4.13
+    container_name: masr3-bull-board
+    restart: unless-stopped
+
+    environment:
+      REDIS_HOST: masr3-redis
+      REDIS_PORT: 6379
+      BULL_VERSION: BULLMQ
+
+    ports:
+      - '44001:3000'
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    networks:
+      - masr3-network
+
+  # ========================================
   # Dev-only tools
   # ========================================
 
@@ -274,6 +331,9 @@ volumes:
 
   masr3_pgadmin_data:
     name: masr3_pgadmin_data
+
+  masr3_redis_data:
+    name: masr3_redis_data
 
 # ========================================
 # Shared Network

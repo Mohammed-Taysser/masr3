@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Queue } from 'bullmq';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 
 import { dayjs } from '@masr3/libs';
@@ -6,7 +7,11 @@ import { dayjs } from '@masr3/libs';
 import KafkaProducerService from '../../../kafka/kafka-producer.service';
 import OutboxEventEntity from '../entities/outbox-event.entity';
 import OutboxRelayService from '../outbox-relay.service';
-import { OUTBOX_RELAY_LOCK_ID } from '../outbox.constant';
+import {
+  OUTBOX_RELAY_LOCK_ID,
+  OUTBOX_RELAY_SCHEDULER_ID,
+} from '../outbox.constant';
+import { OutboxJobEnum } from '../outbox.enum';
 
 const RETENTION_MS = 604800000;
 
@@ -23,6 +28,7 @@ describe('OutboxRelayService', () => {
   let relay: OutboxRelayService;
   let manager: jest.Mocked<EntityManager>;
   let producer: jest.Mocked<KafkaProducerService>;
+  let relayQueue: jest.Mocked<Queue>;
 
   const lockResult = (locked: boolean) =>
     manager.query.mockResolvedValue([{ locked }]);
@@ -50,11 +56,30 @@ describe('OutboxRelayService', () => {
       getOrThrow: jest.fn((key: string) => config[key]),
     } as unknown as ConfigService;
 
-    relay = new OutboxRelayService(dataSource, producer, configService);
+    relayQueue = {
+      upsertJobScheduler: jest.fn(),
+    } as unknown as jest.Mocked<Queue>;
+
+    relay = new OutboxRelayService(
+      dataSource,
+      producer,
+      relayQueue,
+      configService,
+    );
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('schedules a RELAY job every OUTBOX_POLL_INTERVAL_MS on boot', async () => {
+    await relay.onApplicationBootstrap();
+
+    expect(relayQueue.upsertJobScheduler).toHaveBeenCalledWith(
+      OUTBOX_RELAY_SCHEDULER_ID,
+      { every: config.OUTBOX_POLL_INTERVAL_MS },
+      { name: OutboxJobEnum.RELAY },
+    );
   });
 
   it('does nothing when another instance holds the relay lock', async () => {

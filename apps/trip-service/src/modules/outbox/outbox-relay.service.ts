@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-  OnModuleDestroy,
-} from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Queue } from 'bullmq';
 import { Message, TopicMessages } from 'kafkajs';
 import { DataSource, EntityManager, In, IsNull, LessThan } from 'typeorm';
 
@@ -12,21 +9,24 @@ import { dayjs } from '@masr3/libs';
 
 import KafkaProducerService from '../../kafka/kafka-producer.service';
 import OutboxEventEntity from './entities/outbox-event.entity';
-import { OUTBOX_RELAY_LOCK_ID } from './outbox.constant';
+import {
+  OUTBOX_RELAY_LOCK_ID,
+  OUTBOX_RELAY_QUEUE,
+  OUTBOX_RELAY_SCHEDULER_ID,
+} from './outbox.constant';
+import { OutboxJobEnum } from './outbox.enum';
 
 @Injectable()
-class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestroy {
+class OutboxRelayService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OutboxRelayService.name);
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
   private readonly retentionMs: number;
-  private timer: NodeJS.Timeout | null = null;
-  private inFlight: Promise<void> | null = null;
-  private stopped = false;
 
   constructor(
     private readonly dataSource: DataSource,
     private readonly producer: KafkaProducerService,
+    @InjectQueue(OUTBOX_RELAY_QUEUE) private readonly relayQueue: Queue,
     configService: ConfigService,
   ) {
     this.pollIntervalMs = configService.getOrThrow<number>(
@@ -36,35 +36,13 @@ class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestroy {
     this.retentionMs = configService.getOrThrow<number>('OUTBOX_RETENTION_MS');
   }
 
-  onApplicationBootstrap() {
-    this.schedule();
-  }
-
-  async onModuleDestroy() {
-    this.stopped = true;
-
-    if (this.timer) {
-      clearTimeout(this.timer);
-    }
-
-    await this.inFlight;
-  }
-
-  // The next tick is scheduled only after this one finishes, so ticks never
-  // overlap.
-  private schedule() {
-    if (this.stopped) {
-      return;
-    }
-
-    this.timer = setTimeout(async () => {
-      this.inFlight = this.relay().catch((error: Error) =>
-        this.logger.error(`Outbox relay tick failed: ${error.message}`),
-      );
-      await this.inFlight;
-      this.inFlight = null;
-      this.schedule();
-    }, this.pollIntervalMs);
+  // BullMQ adds a RELAY job every interval; OutboxRelayProcessor runs it.
+  async onApplicationBootstrap() {
+    await this.relayQueue.upsertJobScheduler(
+      OUTBOX_RELAY_SCHEDULER_ID,
+      { every: this.pollIntervalMs },
+      { name: OutboxJobEnum.RELAY },
+    );
   }
 
   async relay(): Promise<void> {

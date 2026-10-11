@@ -30,10 +30,10 @@ class OutboxEventEntity {
   @Column({ type: 'varchar', nullable: true })
   lastError: string | null;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   publishedAt: Date | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }
 

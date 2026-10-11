@@ -15,6 +15,11 @@ const validEnv = {
   POSTGRES_DB: 'trip_db',
 
   TRIP_REQUEST_TTL_MS: '600000',
+  TRIP_EXPIRY_SWEEP_INTERVAL_MS: '60000',
+  TRIP_EXPIRY_BATCH_SIZE: '100',
+
+  REDIS_HOST: 'localhost',
+  REDIS_PORT: '44000',
 
   KAFKA_BROKER: 'localhost:42000',
   KAFKA_CLIENT_ID: 'trip-service',
@@ -56,9 +61,9 @@ describe('validate', () => {
     });
   });
 
-  describe('PORT', () => {
-    it.each(['0', '65536', 'not-a-number'])('rejects %p', (PORT) => {
-      expect(() => validate({ ...validEnv, PORT })).toThrow();
+  describe.each(['PORT', 'REDIS_PORT'])('%s', (property) => {
+    it.each(['0', '65536', 'not-a-number'])('rejects %p', (value) => {
+      expect(() => validate({ ...validEnv, [property]: value })).toThrow();
     });
   });
 
@@ -69,6 +74,7 @@ describe('validate', () => {
       'POSTGRES_USER',
       'POSTGRES_PASSWORD',
       'POSTGRES_DB',
+      'REDIS_HOST',
       'KAFKA_BROKER',
       'KAFKA_CLIENT_ID',
     ])('rejects an empty %s', (property) => {
@@ -78,6 +84,8 @@ describe('validate', () => {
 
   describe.each([
     'TRIP_REQUEST_TTL_MS',
+    'TRIP_EXPIRY_SWEEP_INTERVAL_MS',
+    'TRIP_EXPIRY_BATCH_SIZE',
     'OUTBOX_POLL_INTERVAL_MS',
     'OUTBOX_BATCH_SIZE',
     'OUTBOX_RETENTION_MS',

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Queue } from 'bullmq';
 import {
   DataSource,
   EntityManager,
@@ -29,7 +30,7 @@ import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
-import { TripOfferStatusEnum } from '../trip.enum';
+import { TripExpiryJobEnum, TripOfferStatusEnum } from '../trip.enum';
 import { CreateTripCommand } from '../trip.interface';
 import TripService from '../trip.service';
 
@@ -49,6 +50,7 @@ describe('TripService', () => {
   let historyRepository: jest.Mocked<Repository<TripStatusHistoryEntity>>;
   let tripRepository: jest.Mocked<Repository<TripEntity>>;
   let outboxService: jest.Mocked<OutboxService>;
+  let expiryQueue: jest.Mocked<Queue>;
 
   const command: CreateTripCommand = {
     customerId: 1,
@@ -67,6 +69,7 @@ describe('TripService', () => {
     customerId: 1,
     driverId: null,
     status: TripStatusEnum.REQUESTED,
+    expiresAt: dayjs().add(10, 'minute').toDate(),
   } as TripEntity;
 
   beforeEach(() => {
@@ -102,12 +105,17 @@ describe('TripService', () => {
       enqueue: jest.fn(),
     } as unknown as jest.Mocked<OutboxService>;
 
+    expiryQueue = {
+      add: jest.fn().mockResolvedValue({}),
+    } as unknown as jest.Mocked<Queue>;
+
     service = new TripService(
       dataSource,
       configService,
       outboxService,
       tripRepository,
       historyRepository,
+      expiryQueue,
     );
   });
 
@@ -175,6 +183,39 @@ describe('TripService', () => {
 
       expect(ttl).toBeGreaterThanOrEqual(TTL_MS);
       expect(ttl).toBeLessThan(TTL_MS + 5000);
+    });
+
+    it('queues an EXPIRE_TRIP job delayed until the deadline, after the commit', async () => {
+      await service.create(command);
+
+      const [name, data, options] = expiryQueue.add.mock.calls[0] as [
+        string,
+        { tripId: number },
+        { jobId: string; delay: number },
+      ];
+
+      expect(name).toBe(TripExpiryJobEnum.EXPIRE_TRIP);
+      expect(data).toEqual({ tripId: trip.id });
+      expect(options.jobId).toBe(`trip-${trip.id}`);
+      expect(options.delay).toBeGreaterThan(TTL_MS - 1000);
+      expect(options.delay).toBeLessThanOrEqual(TTL_MS);
+    });
+
+    it('still creates the trip when the expiry job cannot be queued', async () => {
+      expiryQueue.add.mockRejectedValue(new Error('Redis is down'));
+
+      await expect(service.create(command)).resolves.toMatchObject({
+        id: trip.id,
+      });
+    });
+
+    it('queues nothing when the transaction fails', async () => {
+      dataSource.transaction.mockRejectedValue(
+        uniqueViolation(UQ_TRIPS_ACTIVE_CUSTOMER),
+      );
+
+      await expect(service.create(command)).rejects.toThrow(ConflictException);
+      expect(expiryQueue.add).not.toHaveBeenCalled();
     });
 
     it('turns the active-customer index violation into a conflict', async () => {
@@ -348,7 +389,10 @@ describe('TripService', () => {
     ])(
       'closes pending offers when the trip moves to %s',
       async (to, actor, actorId, closedAs) => {
-        manager.findOne.mockResolvedValue({ ...trip });
+        manager.findOne.mockResolvedValue({
+          ...trip,
+          expiresAt: dayjs().subtract(1, 'second').toDate(),
+        });
 
         await service.applyTransition(manager, {
           tripId: trip.id,
@@ -409,6 +453,64 @@ describe('TripService', () => {
 
       expect(manager.insert).not.toHaveBeenCalled();
       expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('refuses to accept a request past its deadline, writing nothing', async () => {
+      manager.findOne.mockResolvedValue({
+        ...trip,
+        expiresAt: dayjs().subtract(1, 'second').toDate(),
+      });
+
+      await expect(
+        service.applyTransition(manager, {
+          tripId: trip.id,
+          to: TripStatusEnum.ACCEPTED,
+          actor: TripActorEnum.CUSTOMER,
+          actorId: trip.customerId,
+          changes: { driverId: 2, agreedFare: 90 },
+          acceptedOfferId: 12,
+        }),
+      ).rejects.toThrow(new ConflictException('The trip request has expired'));
+
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(manager.insert).not.toHaveBeenCalled();
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('refuses to expire a request before its deadline', async () => {
+      manager.findOne.mockResolvedValue({ ...trip });
+
+      await expect(
+        service.applyTransition(manager, {
+          tripId: trip.id,
+          to: TripStatusEnum.EXPIRED,
+          actor: TripActorEnum.SYSTEM,
+          actorId: null,
+        }),
+      ).rejects.toThrow(
+        new ConflictException('The trip request has not expired yet'),
+      );
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('still lets the customer cancel a request past its deadline', async () => {
+      manager.findOne.mockResolvedValue({
+        ...trip,
+        expiresAt: dayjs().subtract(1, 'second').toDate(),
+      });
+
+      await service.applyTransition(manager, {
+        tripId: trip.id,
+        to: TripStatusEnum.CANCELLED,
+        actor: TripActorEnum.CUSTOMER,
+        actorId: trip.customerId,
+      });
+
+      expect(manager.update).toHaveBeenCalledWith(
+        TripEntity,
+        { id: trip.id },
+        { status: TripStatusEnum.CANCELLED },
+      );
     });
 
     it('leaves offers alone once the trip has left REQUESTED', async () => {

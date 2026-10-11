@@ -15,7 +15,8 @@
     "skipDefaultLibCheck": true,
     "strict": false,
     "paths": {
-      "@masr3/libs": ["./libs/src/index.ts"]
+      "@masr3/libs": ["./libs/src/index.ts"],
+      "@masr3/libs/timezone": ["./libs/src/lib/date/timezone.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

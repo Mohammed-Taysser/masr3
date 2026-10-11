@@ -5,6 +5,7 @@ export * from './lib/kafka/kafka.events';
 export * from './lib/kafka/trip/trip.enum';
 export * from './lib/kafka/trip/trip.events';
 export * from './lib/kafka/trip/trip.topics';
+export * from './lib/date/timezone';
 export * from './lib/date/dayjs';
 export * from './lib/auth/auth.enum';
 export * from './lib/auth/auth.constant';

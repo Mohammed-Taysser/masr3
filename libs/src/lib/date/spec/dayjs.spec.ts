@@ -1,3 +1,4 @@
+import { APP_TIMEZONE } from '../timezone';
 import { dayjs } from '../dayjs';
 
 describe('shared dayjs', () => {
@@ -12,6 +13,11 @@ describe('shared dayjs', () => {
   it('has the timezone plugin', () => {
     // Cairo is UTC+3 in October (daylight saving).
     expect(dayjs.utc(iso).tz('Africa/Cairo').format('HH:mm')).toBe('11:04');
+  });
+
+  it('defaults dayjs.tz() to APP_TIMEZONE (UTC)', () => {
+    expect(APP_TIMEZONE).toBe('UTC');
+    expect(dayjs.tz(iso).format('HH:mm Z')).toBe('08:04 +00:00');
   });
 
   it('round-trips an ISO timestamp', () => {

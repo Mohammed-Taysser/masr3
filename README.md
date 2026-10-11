@@ -8,8 +8,8 @@
 
 masr3 is an Nx monorepo of **three NestJS microservices** — `auth-service`, `notification-service`
 and `trip-service` — plus a shared `libs` project. **Docker is infrastructure only**: one Postgres per service,
-pgbouncer in front of them, Kafka (KRaft) with Kafka UI, pgAdmin, and Mailhog for dev-only email
-testing. App services are never containerized; they run on the host via Nx (see "App services run
+pgbouncer in front of them, Kafka (KRaft) with Kafka UI, Redis (BullMQ jobs) with bull-board, pgAdmin,
+and Mailhog for dev-only email testing. App services are never containerized; they run on the host via Nx (see "App services run
 on the host"). Package manager is **pnpm**.
 
 > This README describes **what exists on `main`**. Planned work lives in each service's
@@ -124,6 +124,7 @@ Host-published ports only — container-internal ports keep each image's default
 | pgbouncer      | 41500 | `pgbouncer`=41500                                         |
 | Messaging      | 42000 | `kafka` (host listener)=42000, `kafka-ui`=42001           |
 | DB / infra UI  | 43000 | `pgadmin`=43000                                           |
+| Queues         | 44000 | `redis`=44000, `bull-board`=44001                         |
 | Dev-only tools | 45000 | `mailhog` SMTP=45000, web UI=45001                        |
 
 Databases are numbered contiguously in the order they were added; a new service takes 41003.
@@ -147,8 +148,8 @@ Each service's own DB credentials do **not** live here — see below.
 - **`apps/<service>/.env`** — real values, **gitignored**. Copy from the committed `.env.example`.
   Holds what is specific to that service: `PORT`, `SERVICE_NAME` (reported by `GET /api/health`), `DATABASE_HOST`/`DATABASE_PORT`, `KAFKA_BROKER`
   and its own `KAFKA_CLIENT_ID`. notification-service adds `APP_NAME`, `MAIL_*`,
-  `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`; trip-service adds `TRIP_REQUEST_TTL_MS`
-  and `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` / `OUTBOX_RETENTION_MS`. Every variable is checked at boot by
+  `PASSWORD_RESET_URL_BASE` and `KAFKA_CONSUMER_GROUP_ID`; trip-service adds `TRIP_REQUEST_TTL_MS`,
+  `TRIP_EXPIRY_SWEEP_INTERVAL_MS` / `TRIP_EXPIRY_BATCH_SIZE`, `REDIS_HOST` / `REDIS_PORT` and `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` / `OUTBOX_RETENTION_MS`. Every variable is checked at boot by
   that service's `config/env/env.validation.ts`; a missing one fails startup rather than surfacing
   later as `undefined`.
 - **`apps/<service>/db.env`** — that service's database credentials
@@ -162,7 +163,19 @@ Each service's own DB credentials do **not** live here — see below.
 > are dev-only placeholders today. If you put a real value in one, it is disclosed the moment it is
 > committed — rotate first, then untrack.
 
-### Dates — always dayjs
+### Dates — always dayjs, always UTC
+
+**Everything runs in UTC** (`APP_TIMEZONE` in `libs/src/lib/date/timezone.ts`):
+
+- **Columns** are `timestamptz`, so Postgres stores an absolute instant whatever the session zone.
+- **Postgres** runs with `timezone=UTC` (the `command:` of each database in `docker-compose.yaml`).
+- **Each service** imports `@masr3/libs/timezone` as the first line of `main.ts`. That sets
+  `process.env.TZ`, so `dayjs()`, `Date` and Nest's log timestamps are UTC. It has to come first:
+  Node fixes a formatter's zone when the formatter is created, and Nest creates its logger's
+  formatter on import.
+- **dayjs** defaults `dayjs.tz()` to the same zone.
+
+Convert to a user's zone only when formatting something for them to read.
 
 **Use `dayjs` for every date: creating, formatting, comparing, adding or subtracting time.** Do
 not use `new Date()`, `Date.now()`, `Date.parse`, `toUTCString()`/`toLocaleString()` or
@@ -406,18 +419,30 @@ curl -s $T/trips/$TRIP/history -H "Authorization: Bearer $C" | jq '.[].toStatus'
     `409`.
 - One active trip per customer and per driver, enforced by the partial unique indexes
   `UQ_trips_active_customer` / `UQ_trips_active_driver`.
-- `TRIP_REQUEST_TTL_MS` sets `expiresAt` on new trips. Nothing expires them yet.
+- **Requests expire.** `TRIP_REQUEST_TTL_MS` sets `expiresAt` on each new trip.
+  - After the trip commits, `TripService.create` queues a BullMQ `EXPIRE_TRIP` job (queue
+    `TRIP-EXPIRY`, job id `trip-<id>`) delayed until `expiresAt`. When it fires, the trip moves
+    to EXPIRED (actor `SYSTEM`) unless it was accepted or cancelled first.
+  - A `SWEEP` job every `TRIP_EXPIRY_SWEEP_INTERVAL_MS` expires up to `TRIP_EXPIRY_BATCH_SIZE`
+    overdue trips whose job never ran, for example because Redis was down when the trip was
+    created.
+  - Either way it goes through `TripService.transition`: a history row, an event, and pending
+    offers moved to EXPIRED. A job that fires early does nothing; the trip must be past its
+    deadline.
+  - Accepting an offer on a trip past its deadline answers `409` "The trip request has expired".
+    Once expired, the customer can request again.
 - **Every status change is published to `trip.status-changed` through a transactional outbox.**
   - The event row is written in the same transaction as the change.
-  - `OutboxRelayService` sends pending rows to Kafka in order and retries until Kafka accepts
-    them.
+  - A BullMQ job scheduler adds a `RELAY` job (queue `OUTBOX-RELAY`) every
+    `OUTBOX_POLL_INTERVAL_MS`. `OutboxRelayService` then sends pending rows to Kafka in order and
+    retries until Kafka accepts them.
   - Nothing is lost while Kafka is down; the rows wait. See
     [`docs/patterns/transactional-outbox.md`](docs/patterns/transactional-outbox.md).
   - Pending or failing events:
     `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER BY id`.
 
-The planned lifecycle, bidding, concurrency, outbox, live location (WebSocket + Redis) and expiry
-are in [`apps/trip-service/docs/design.md`](apps/trip-service/docs/design.md).
+The design, and what is still planned (live location over WebSocket + Redis GEO, trip emails),
+is in [`apps/trip-service/docs/design.md`](apps/trip-service/docs/design.md).
 
 ### API docs (Swagger)
 
@@ -438,6 +463,15 @@ credentials.
   imports that file only on its first start, so an existing `masr3_pgadmin_data` volume will not
   show a newly added server. Re-import the file, which replaces the registered servers:
   `docker exec masr3-pgadmin /venv/bin/python3 /pgadmin4/setup.py load-servers /pgadmin4/servers.json --user pgadmin4@pgadmin.org --replace`.
+
+### Queue UI
+
+- **bull-board** (`http://localhost:44001`) lists every BullMQ queue in `masr3-redis`: scheduled,
+  delayed, completed and failed jobs, with their data and errors. Completed jobs are kept up to
+  the last 100 per queue, failed ones up to 500.
+  - It finds queues by the default `bull` key prefix, **only when it starts**. A queue created
+    later (a fresh Redis, a new or renamed queue) stays invisible until you restart it:
+    `docker compose up -d --no-deps --force-recreate bull-board`.
 
 ### Monitoring & tracing
 

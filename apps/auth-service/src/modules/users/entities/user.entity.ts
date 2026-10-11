@@ -40,13 +40,13 @@ class UserEntity {
   passwordResetTokenHash: string | null;
 
   @Exclude()
-  @Column({ type: 'timestamp', nullable: true, select: false })
+  @Column({ type: 'timestamptz', nullable: true, select: false })
   passwordResetExpiresAt: Date | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }
 

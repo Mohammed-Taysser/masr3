@@ -60,6 +60,9 @@ const UQ_TRIPS_ACTIVE_CUSTOMER = 'UQ_trips_active_customer';
 const UQ_TRIPS_ACTIVE_DRIVER = 'UQ_trips_active_driver';
 const UQ_TRIP_OFFERS_PENDING_DRIVER = 'UQ_trip_offers_pending_driver';
 
+const TRIP_EXPIRY_QUEUE = 'TRIP-EXPIRY';
+const TRIP_EXPIRY_SWEEP_SCHEDULER_ID = 'TRIP-EXPIRY-SWEEP';
+
 const ROLE_TO_TRIP_ACTOR: Readonly<Record<UserRoleEnum, TripActorEnum>> = {
   [UserRoleEnum.CUSTOMER]: TripActorEnum.CUSTOMER,
   [UserRoleEnum.DRIVER]: TripActorEnum.DRIVER,
@@ -78,4 +81,6 @@ export {
   UQ_TRIPS_ACTIVE_DRIVER,
   UQ_TRIP_OFFERS_PENDING_DRIVER,
   ROLE_TO_TRIP_ACTOR,
+  TRIP_EXPIRY_QUEUE,
+  TRIP_EXPIRY_SWEEP_SCHEDULER_ID,
 };

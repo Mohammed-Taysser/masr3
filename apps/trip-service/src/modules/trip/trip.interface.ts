@@ -29,4 +29,8 @@ interface TransitionTripCommand {
   acceptedOfferId?: number;
 }
 
-export type { CreateTripCommand, TransitionTripCommand };
+interface ExpireTripJobData {
+  tripId: number;
+}
+
+export type { CreateTripCommand, ExpireTripJobData, TransitionTripCommand };

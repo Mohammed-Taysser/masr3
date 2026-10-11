@@ -10,7 +10,8 @@ Docker runs only the infrastructure. The apps run on the host through Nx.
 | `notification-service` | 7001 | `notification-db` (41001) | Consumes `auth.*`, sends email                                                     |
 | `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding. Design: `apps/trip-service/docs/design.md` |
 
-All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`.
+All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`;
+trip-service also uses Redis (`localhost:44000`) for BullMQ jobs.
 `README.md` documents what exists, and is the reference for infrastructure, ports and Kafka.
 
 ## Commands
@@ -24,6 +25,9 @@ All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `loca
   `migrate-generate --name=<kebab-name>`.
 - In this shell `rm` and `cp` are aliased to interactive mode, so use `rm -f` and `cp -f` in
   scripts.
+- Start or restart one container with `docker compose up -d --no-deps <name>`. Without
+  `--no-deps`, Compose also recreates every dependency whose config changed. That once mounted
+  fresh, empty database volumes.
 - Never `pkill -f` / `pgrep -f … | kill` with a pattern that also appears in your own command
   line: it kills the shell running it. Kill by PID from `ps -eo pid,args | grep "[p]attern"`.
 - Nx records every running `serve` in `.nx/workspace-data`. A second `nx serve` / `run-many` of
@@ -72,9 +76,12 @@ All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `loca
     `<module>.interface.ts`. Each is one flat file per module, next to the module.
   - Enum names end in `Enum` (`TripStatusEnum`), and their values are UPPERCASE strings.
   - Use a plain `enum`, never `const enum`, because files are transpiled in isolation.
-- **Dates:** always `dayjs`, imported from `@masr3/libs`.
+- **Dates:** always `dayjs`, imported from `@masr3/libs`, and always UTC (`APP_TIMEZONE`).
   - Never use `new Date()`, `Date.now()`, `Date.parse`, `Intl`, or another date library.
   - Call `.toDate()` only at a library boundary (a TypeORM column, a JWT option).
+  - `main.ts` starts with `import '@masr3/libs/timezone';`, before any other import. It sets
+    `process.env.TZ`, and Nest creates its log formatter on import, so later is too late.
+  - Postgres runs with `timezone=UTC`. Convert to a user's zone only when formatting for them.
 - **Money** is `decimal` in the currency's major unit (EGP, 2 decimals), never a float column.
 - **Shared code:**
   - Scope it to the service (`src/shared/…`) by default.
@@ -105,6 +112,7 @@ apps/<svc>/
     database/migrations/              <timestamp>-<kebab-name>.ts, CLI-generated only
     health/                           public GET /api/health → { status, service: SERVICE_NAME, timestamp }
     kafka/                            producer and/or consumer service + module (when the service uses Kafka)
+    queue/                            BullMQ root module: the Redis connection (when the service has jobs)
     modules/<name>/
       entities/<name>.entity.ts
       dto/*.dto.ts
@@ -131,7 +139,12 @@ apps/<svc>/
 
 - **Table names** are plural snake_case (`@Entity('trips')`, `trip_status_history`).
 - **Columns:** `@PrimaryGeneratedColumn() id: number` (serial, not UUID), plus
-  `@CreateDateColumn() createdAt` and `@UpdateDateColumn() updatedAt`.
+  `@CreateDateColumn({ type: 'timestamptz' }) createdAt` and
+  `@UpdateDateColumn({ type: 'timestamptz' }) updatedAt`.
+- **Dates** are `timestamptz`, never `timestamp`. A `timestamp` column stores wall-clock time and
+  silently drops the zone. Changing a column's type makes the CLI emit `DROP` + `ADD`, which loses
+  the data: show the migration and ask (the UTC migrations were patched to
+  `ALTER COLUMN … TYPE … USING`).
 - **Enums** are real Postgres enums: `@Column({ type: 'enum', enum: XEnum })`.
   - Keep TypeORM's default type names.
   - **Do not share an `enumName` across tables**: the CLI then emits a duplicate `CREATE TYPE`.
@@ -188,6 +201,27 @@ apps/<svc>/
   - `/api/health` is always public.
 - **Logging:** never log tokens, secrets, cookies or `Authorization` headers. Any future HTTP or
   exception logging must redact them, including login, refresh and service-token bodies.
+
+## Background jobs (BullMQ)
+
+- **No `setTimeout` / `setInterval` loops** for background work. Use BullMQ on Redis
+  (`REDIS_HOST` / `REDIS_PORT`). trip-service is the reference.
+- **Work that repeats** (relay, sweep) uses a job scheduler, upserted on boot:
+  `queue.upsertJobScheduler(SCHEDULER_ID, { every: ms }, { name: JobEnum.X })`. Every instance
+  upserts the same id, and there is still one scheduler.
+- **Work at a future moment** (expire trip 7 at its deadline) is a delayed job with a stable
+  `jobId` (`trip-<id>`, never a bare number). Queue it after the transaction commits. Don't await
+  it in a request: back it with a scheduled sweep for jobs that were never queued.
+- **Processors** extend `WorkerHost` in `<name>.processor.ts`, and switch on `job.name`.
+  - A job that finds nothing to do returns.
+  - An unexpected error is thrown, so the job is marked failed in bull-board.
+  - The job must be safe to run twice, or concurrently on two instances: go through the same
+    locked service method as everything else.
+- **Names:** queue names and scheduler ids are constants in `<module>.constant.ts`, job names an
+  enum in `<module>.enum.ts`, payloads an interface in `<module>.interface.ts`. Register a queue
+  with `BullModule.registerQueue` in its feature module.
+- **UI:** bull-board at `http://localhost:44001`. It discovers queues only at startup, so after a
+  new or renamed queue first appears, run `docker compose up -d --no-deps --force-recreate bull-board`.
 
 ## Kafka
 

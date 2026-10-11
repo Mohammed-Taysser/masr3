@@ -59,6 +59,23 @@ class EnvironmentVariables {
   @Min(1)
   TRIP_REQUEST_TTL_MS: number;
 
+  @IsInt()
+  @Min(1)
+  TRIP_EXPIRY_SWEEP_INTERVAL_MS: number;
+
+  @IsInt()
+  @Min(1)
+  TRIP_EXPIRY_BATCH_SIZE: number;
+
+  @IsString()
+  @MinLength(1)
+  REDIS_HOST: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  REDIS_PORT: number;
+
   @IsString()
   @MinLength(1)
   KAFKA_BROKER: string;

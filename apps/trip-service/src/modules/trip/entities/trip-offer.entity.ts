@@ -51,10 +51,10 @@ class TripOfferEntity {
   @Column({ type: 'enum', enum: TripOfferStatusEnum })
   status: TripOfferStatusEnum;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }
 

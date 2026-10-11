@@ -1,3 +1,4 @@
+import '@masr3/libs/timezone';
 import 'reflect-metadata';
 
 import {
@@ -8,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
 import AppModule from './app.module';
 
 async function bootstrap() {

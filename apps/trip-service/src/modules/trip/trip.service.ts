@@ -1,10 +1,13 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
 import {
   DataSource,
@@ -34,11 +37,16 @@ import TripOfferEntity from './entities/trip-offer.entity';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import {
+  TRIP_EXPIRY_QUEUE,
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from './trip.constant';
-import { TripOfferStatusEnum } from './trip.enum';
-import { CreateTripCommand, TransitionTripCommand } from './trip.interface';
+import { TripExpiryJobEnum, TripOfferStatusEnum } from './trip.enum';
+import {
+  CreateTripCommand,
+  ExpireTripJobData,
+  TransitionTripCommand,
+} from './trip.interface';
 import {
   assertTransitionAllowed,
   canViewTrip,
@@ -47,6 +55,8 @@ import {
 
 @Injectable()
 class TripService {
+  private readonly logger = new Logger(TripService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
@@ -55,6 +65,7 @@ class TripService {
     private readonly tripRepository: Repository<TripEntity>,
     @InjectRepository(TripStatusHistoryEntity)
     private readonly historyRepository: Repository<TripStatusHistoryEntity>,
+    @InjectQueue(TRIP_EXPIRY_QUEUE) private readonly expiryQueue: Queue,
   ) {}
 
   async create(command: CreateTripCommand): Promise<TripEntity> {
@@ -69,9 +80,11 @@ class TripService {
             packageDescription: null,
           };
 
+    let trip: TripEntity;
+
     try {
-      return await this.dataSource.transaction(async (manager) => {
-        const trip = await manager.save(
+      trip = await this.dataSource.transaction(async (manager) => {
+        const created = await manager.save(
           manager.create(TripEntity, {
             ...command,
             ...parcel,
@@ -81,7 +94,7 @@ class TripService {
         );
 
         await manager.insert(TripStatusHistoryEntity, {
-          tripId: trip.id,
+          tripId: created.id,
           fromStatus: null,
           toStatus: TripStatusEnum.REQUESTED,
           actor: TripActorEnum.CUSTOMER,
@@ -93,16 +106,16 @@ class TripService {
           manager,
           TripKafkaTopic.STATUS_CHANGED,
           TripService.buildStatusChangedEvent(
-            trip,
+            created,
             null,
             TripActorEnum.CUSTOMER,
             command.customerId,
             null,
           ),
-          String(trip.id),
+          String(created.id),
         );
 
-        return trip;
+        return created;
       });
     } catch (error) {
       if (isUniqueViolation(error, UQ_TRIPS_ACTIVE_CUSTOMER)) {
@@ -111,6 +124,28 @@ class TripService {
 
       throw error;
     }
+
+    this.scheduleExpiry(trip);
+
+    return trip;
+  }
+
+  // Queued after the commit, so a job never names a rolled-back trip. Not
+  // awaited: while Redis is down the request still succeeds, and the SWEEP job
+  // expires the trip instead.
+  private scheduleExpiry(trip: TripEntity): void {
+    const data: ExpireTripJobData = { tripId: trip.id };
+
+    this.expiryQueue
+      .add(TripExpiryJobEnum.EXPIRE_TRIP, data, {
+        jobId: `trip-${trip.id}`,
+        delay: Math.max(0, dayjs(trip.expiresAt).diff(dayjs())),
+      })
+      .catch((error: Error) =>
+        this.logger.warn(
+          `Could not queue expiry for trip ${trip.id}: ${error.message}`,
+        ),
+      );
   }
 
   async transition(command: TransitionTripCommand): Promise<TripEntity> {
@@ -154,6 +189,22 @@ class TripService {
     }
 
     assertTransitionAllowed(trip, to, actor, actorId);
+
+    // The expiry loop runs every few seconds; until it reaches this trip,
+    // nobody may accept a request that is already past its deadline.
+    const isAcceptingExpiredRequest =
+      to === TripStatusEnum.ACCEPTED && !dayjs(trip.expiresAt).isAfter(dayjs());
+
+    if (isAcceptingExpiredRequest) {
+      throw new ConflictException('The trip request has expired');
+    }
+
+    const isExpiringEarly =
+      to === TripStatusEnum.EXPIRED && dayjs(trip.expiresAt).isAfter(dayjs());
+
+    if (isExpiringEarly) {
+      throw new ConflictException('The trip request has not expired yet');
+    }
 
     await manager.update(
       TripEntity,
