@@ -12,20 +12,24 @@ import {
 } from 'typeorm';
 
 import {
+  AuthenticatedUser,
   dayjs,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusEnum,
   TripTypeEnum,
+  UserRoleEnum,
 } from '@masr3/libs';
 
 import OutboxService from '../../outbox/outbox.service';
+import TripOfferEntity from '../entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../entities/trip-status-history.entity';
 import TripEntity from '../entities/trip.entity';
 import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
+import { TripOfferStatusEnum } from '../trip.enum';
 import { CreateTripCommand } from '../trip.interface';
 import TripService from '../trip.service';
 
@@ -43,6 +47,7 @@ describe('TripService', () => {
   let manager: jest.Mocked<EntityManager>;
   let dataSource: jest.Mocked<DataSource>;
   let historyRepository: jest.Mocked<Repository<TripStatusHistoryEntity>>;
+  let tripRepository: jest.Mocked<Repository<TripEntity>>;
   let outboxService: jest.Mocked<OutboxService>;
 
   const command: CreateTripCommand = {
@@ -70,7 +75,7 @@ describe('TripService', () => {
       save: jest.fn(async (values) => ({ ...values, id: trip.id })),
       insert: jest.fn(),
       findOne: jest.fn(),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOneByOrFail: jest.fn(),
     } as unknown as jest.Mocked<EntityManager>;
 
@@ -84,6 +89,11 @@ describe('TripService', () => {
       find: jest.fn(),
     } as unknown as jest.Mocked<Repository<TripStatusHistoryEntity>>;
 
+    tripRepository = {
+      findOneBy: jest.fn(),
+      findAndCount: jest.fn().mockResolvedValue([[], 0]),
+    } as unknown as jest.Mocked<Repository<TripEntity>>;
+
     const configService = {
       getOrThrow: jest.fn().mockReturnValue(TTL_MS),
     } as unknown as ConfigService;
@@ -96,6 +106,7 @@ describe('TripService', () => {
       dataSource,
       configService,
       outboxService,
+      tripRepository,
       historyRepository,
     );
   });
@@ -281,6 +292,232 @@ describe('TripService', () => {
       ).rejects.toThrow(
         new ConflictException('The driver already has an active trip'),
       );
+    });
+  });
+
+  describe('create — parcel details', () => {
+    it('drops parcel fields on a ride', async () => {
+      await service.create({ ...command, recipientName: 'Mona' });
+
+      expect(manager.create).toHaveBeenCalledWith(
+        TripEntity,
+        expect.objectContaining({
+          recipientName: null,
+          recipientPhone: null,
+          packageDescription: null,
+        }),
+      );
+    });
+
+    it('keeps parcel fields on a parcel', async () => {
+      await service.create({
+        ...command,
+        type: TripTypeEnum.PARCEL,
+        recipientName: 'Mona',
+        recipientPhone: '+201001234567',
+      });
+
+      expect(manager.create).toHaveBeenCalledWith(
+        TripEntity,
+        expect.objectContaining({
+          recipientName: 'Mona',
+          recipientPhone: '+201001234567',
+        }),
+      );
+    });
+  });
+
+  describe('applyTransition — pending offers', () => {
+    beforeEach(() => {
+      manager.findOneByOrFail.mockResolvedValue({ ...trip } as TripEntity);
+    });
+
+    it.each([
+      [
+        TripStatusEnum.CANCELLED,
+        TripActorEnum.CUSTOMER,
+        1,
+        TripOfferStatusEnum.REJECTED,
+      ],
+      [
+        TripStatusEnum.EXPIRED,
+        TripActorEnum.SYSTEM,
+        null,
+        TripOfferStatusEnum.EXPIRED,
+      ],
+    ])(
+      'closes pending offers when the trip moves to %s',
+      async (to, actor, actorId, closedAs) => {
+        manager.findOne.mockResolvedValue({ ...trip });
+
+        await service.applyTransition(manager, {
+          tripId: trip.id,
+          to,
+          actor,
+          actorId,
+        });
+
+        expect(manager.update).toHaveBeenCalledWith(
+          TripOfferEntity,
+          { tripId: trip.id, status: TripOfferStatusEnum.PENDING },
+          { status: closedAs },
+        );
+      },
+    );
+
+    it('marks the accepted offer ACCEPTED and rejects the rest', async () => {
+      manager.findOne.mockResolvedValue({ ...trip });
+
+      await service.applyTransition(manager, {
+        tripId: trip.id,
+        to: TripStatusEnum.ACCEPTED,
+        actor: TripActorEnum.CUSTOMER,
+        actorId: trip.customerId,
+        changes: { driverId: 2, agreedFare: 90 },
+        acceptedOfferId: 12,
+      });
+
+      expect(manager.update).toHaveBeenCalledWith(
+        TripOfferEntity,
+        { id: 12, tripId: trip.id, status: TripOfferStatusEnum.PENDING },
+        { status: TripOfferStatusEnum.ACCEPTED },
+      );
+      expect(manager.update).toHaveBeenCalledWith(
+        TripOfferEntity,
+        { tripId: trip.id, status: TripOfferStatusEnum.PENDING },
+        { status: TripOfferStatusEnum.REJECTED },
+      );
+    });
+
+    it('conflicts when the accepted offer is no longer pending', async () => {
+      manager.findOne.mockResolvedValue({ ...trip });
+      manager.update
+        .mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] })
+        .mockResolvedValueOnce({ affected: 0, raw: [], generatedMaps: [] });
+
+      await expect(
+        service.applyTransition(manager, {
+          tripId: trip.id,
+          to: TripStatusEnum.ACCEPTED,
+          actor: TripActorEnum.CUSTOMER,
+          actorId: trip.customerId,
+          acceptedOfferId: 12,
+        }),
+      ).rejects.toThrow(
+        new ConflictException('The offer is no longer pending'),
+      );
+
+      expect(manager.insert).not.toHaveBeenCalled();
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('leaves offers alone once the trip has left REQUESTED', async () => {
+      manager.findOne.mockResolvedValue({
+        ...trip,
+        status: TripStatusEnum.ACCEPTED,
+        driverId: 2,
+      });
+
+      await service.applyTransition(manager, {
+        tripId: trip.id,
+        to: TripStatusEnum.DRIVER_ARRIVED,
+        actor: TripActorEnum.DRIVER,
+        actorId: 2,
+      });
+
+      expect(manager.update).not.toHaveBeenCalledWith(
+        TripOfferEntity,
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('visibility', () => {
+    const user = (role: UserRoleEnum, id: number) =>
+      ({
+        id,
+        role,
+        email: 'x@masr3.local',
+        tokenVersion: 0,
+      }) as AuthenticatedUser;
+    const parcel = {
+      ...trip,
+      type: TripTypeEnum.PARCEL,
+      recipientName: 'Mona',
+      recipientPhone: '+201001234567',
+    } as TripEntity;
+
+    it('shows a REQUESTED trip to any driver, without recipient contact', async () => {
+      tripRepository.findOneBy.mockResolvedValue(parcel);
+
+      const result = await service.findVisibleTrip(
+        trip.id,
+        user(UserRoleEnum.DRIVER, 99),
+      );
+
+      expect(result.recipientName).toBeNull();
+      expect(result.recipientPhone).toBeNull();
+    });
+
+    it('shows the customer their own trip in full', async () => {
+      tripRepository.findOneBy.mockResolvedValue(parcel);
+
+      const result = await service.findVisibleTrip(
+        trip.id,
+        user(UserRoleEnum.CUSTOMER, 1),
+      );
+
+      expect(result.recipientPhone).toBe('+201001234567');
+    });
+
+    it('hides an ACCEPTED trip from a driver who is not assigned', async () => {
+      tripRepository.findOneBy.mockResolvedValue({
+        ...trip,
+        status: TripStatusEnum.ACCEPTED,
+        driverId: 2,
+      } as TripEntity);
+
+      await expect(
+        service.findVisibleTrip(trip.id, user(UserRoleEnum.DRIVER, 99)),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('hides history from a driver browsing an open trip', async () => {
+      tripRepository.findOneBy.mockResolvedValue({ ...trip } as TripEntity);
+
+      await expect(
+        service.findHistoryFor(trip.id, user(UserRoleEnum.DRIVER, 99)),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it.each([
+      [UserRoleEnum.CUSTOMER, { customerId: 5 }],
+      [UserRoleEnum.DRIVER, { driverId: 5 }],
+    ])('lists a %s their own trips', async (role, where) => {
+      await service.listMine(user(role, 5), {
+        page: 2,
+        limit: 10,
+        status: TripStatusEnum.COMPLETED,
+      });
+
+      expect(tripRepository.findAndCount).toHaveBeenCalledWith({
+        where: { ...where, status: TripStatusEnum.COMPLETED },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        skip: 10,
+        take: 10,
+      });
+    });
+
+    it('lists only open, unexpired trips', async () => {
+      await service.listOpen({ page: 1, limit: 20 });
+
+      const [{ where }] = tripRepository.findAndCount.mock.calls[0] as [
+        { where: { status: TripStatusEnum; expiresAt: unknown } },
+      ];
+
+      expect(where.status).toBe(TripStatusEnum.REQUESTED);
+      expect(where.expiresAt).toBeDefined();
     });
   });
 

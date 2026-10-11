@@ -31,9 +31,13 @@ async function bootstrap() {
   const builder = new DocumentBuilder()
     .setTitle('Trip Service')
     .setDescription(
-      'Owns masr3 trips — rides and parcels, from request to completion. It exposes no trip endpoints yet — only the health probe.',
+      'Owns masr3 trips — rides and parcels, from request to completion: customers request trips, drivers make offers, the customer accepts one, and the driver runs the trip.',
     )
-    .setVersion('1.0');
+    .setVersion('1.0')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'bearer',
+    );
 
   const document = SwaggerModule.createDocument(app, builder.build());
   SwaggerModule.setup(`${globalPrefix}/docs`, app, document);

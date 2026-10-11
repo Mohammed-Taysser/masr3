@@ -64,6 +64,37 @@ describe('assertTransitionAllowed', () => {
     expect(TRIP_TRANSITIONS[status]).toEqual({});
   });
 
+  it.each([
+    [
+      TripStatusEnum.IN_PROGRESS,
+      TripStatusEnum.IN_PROGRESS,
+      TripActorEnum.DRIVER,
+      'Trip 7 is already IN_PROGRESS',
+    ],
+    [
+      TripStatusEnum.CANCELLED,
+      TripStatusEnum.CANCELLED,
+      TripActorEnum.CUSTOMER,
+      'Trip 7 is already CANCELLED',
+    ],
+    [
+      TripStatusEnum.COMPLETED,
+      TripStatusEnum.CANCELLED,
+      TripActorEnum.CUSTOMER,
+      'Trip 7 is already COMPLETED and can no longer change',
+    ],
+    [
+      TripStatusEnum.ACCEPTED,
+      TripStatusEnum.IN_PROGRESS,
+      TripActorEnum.DRIVER,
+      'Cannot move trip 7 from ACCEPTED to IN_PROGRESS',
+    ],
+  ])('explains %s → %s by %s', (from, to, actor, message) => {
+    expect(() =>
+      assertTransitionAllowed(tripIn(from), to, actor, actorIds[actor]),
+    ).toThrow(new ConflictException(message));
+  });
+
   it('hides another customer’s trip as not found', () => {
     expect(() =>
       assertTransitionAllowed(

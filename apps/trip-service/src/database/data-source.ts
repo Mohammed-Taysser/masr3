@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
+import TripOfferEntity from '../modules/trip/entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../modules/trip/entities/trip-status-history.entity';
 import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
 import TripEntity from '../modules/trip/entities/trip.entity';
@@ -20,7 +21,12 @@ const dataSource = new DataSource({
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
-  entities: [TripEntity, TripStatusHistoryEntity, OutboxEventEntity],
+  entities: [
+    TripEntity,
+    TripStatusHistoryEntity,
+    TripOfferEntity,
+    OutboxEventEntity,
+  ],
   migrations: [path.join(__dirname, 'migrations/*.ts')],
   synchronize: false,
 });

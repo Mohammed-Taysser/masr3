@@ -57,6 +57,8 @@ All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `loca
   - No helpers that build or map exceptions (`tripNotFound()`, `toConflict(error)`).
   - A boolean predicate such as `isUniqueViolation(error, index)` is fine. The `catch` then
     throws the exception itself.
+  - Messages are inline string literals, even when one repeats. They are not constants;
+    localization will replace them later.
 - **Exports:**
   - Classes (services, controllers, modules, entities, DTOs, guards) use `export default`.
   - Enums, constants, functions and interfaces are declared, then exported once at the bottom

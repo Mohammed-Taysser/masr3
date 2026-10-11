@@ -25,6 +25,8 @@ interface TransitionTripCommand {
   actorId: number | null;
   reason?: string;
   changes?: Partial<Pick<TripEntity, 'driverId' | 'agreedFare'>>;
+  // Set when accepting: that offer becomes ACCEPTED, every other one REJECTED.
+  acceptedOfferId?: number;
 }
 
 export type { CreateTripCommand, TransitionTripCommand };
