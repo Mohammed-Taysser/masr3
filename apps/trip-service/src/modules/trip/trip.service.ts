@@ -8,7 +8,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { randomUUID } from 'crypto';
 import {
   DataSource,
   EntityManager,
@@ -20,6 +19,7 @@ import {
 import {
   AuthenticatedUser,
   dayjs,
+  EventPayload,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusChangedEvent,
@@ -37,6 +37,7 @@ import TripOfferEntity from './entities/trip-offer.entity';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import {
+  TRIP_CURRENCY,
   TRIP_EXPIRY_QUEUE,
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
@@ -362,10 +363,8 @@ class TripService {
     actor: TripActorEnum,
     actorId: number | null,
     reason: string | null,
-  ): TripStatusChangedEvent {
+  ): EventPayload<TripStatusChangedEvent> {
     return {
-      eventId: randomUUID(),
-      occurredAt: dayjs().toISOString(),
       tripId: trip.id,
       type: trip.type,
       customerId: trip.customerId,
@@ -375,8 +374,11 @@ class TripService {
       actor,
       actorId,
       reason,
+      pickupAddress: trip.pickupAddress,
+      dropoffAddress: trip.dropoffAddress,
       proposedFare: trip.proposedFare,
       agreedFare: trip.agreedFare ?? null,
+      currency: TRIP_CURRENCY,
     };
   }
 }

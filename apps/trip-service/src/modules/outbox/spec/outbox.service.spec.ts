@@ -3,6 +3,7 @@ import { EntityManager } from 'typeorm';
 import {
   TripActorEnum,
   TripKafkaTopic,
+  EventPayload,
   TripStatusChangedEvent,
   TripStatusEnum,
   TripTypeEnum,
@@ -12,9 +13,7 @@ import OutboxEventEntity from '../entities/outbox-event.entity';
 import OutboxService from '../outbox.service';
 
 describe('OutboxService', () => {
-  const event: TripStatusChangedEvent = {
-    eventId: '6f1c2a52-6b0e-4a43-9d3f-1d3c0f1f8a11',
-    occurredAt: '2026-10-11T08:00:00.000Z',
+  const payload: EventPayload<TripStatusChangedEvent> = {
     tripId: 7,
     type: TripTypeEnum.RIDE,
     customerId: 1,
@@ -24,11 +23,14 @@ describe('OutboxService', () => {
     actor: TripActorEnum.CUSTOMER,
     actorId: 1,
     reason: null,
+    pickupAddress: 'Tahrir Square',
+    dropoffAddress: 'Giza',
     proposedFare: 85.5,
     agreedFare: null,
+    currency: 'EGP',
   };
 
-  it('inserts the event through the caller’s manager', async () => {
+  it('inserts the event through the caller’s manager, with a fresh eventId and occurredAt', async () => {
     const manager = {
       insert: jest.fn(),
     } as unknown as jest.Mocked<EntityManager>;
@@ -36,15 +38,25 @@ describe('OutboxService', () => {
     await new OutboxService().enqueue(
       manager,
       TripKafkaTopic.STATUS_CHANGED,
-      event,
+      payload,
       '7',
     );
 
-    expect(manager.insert).toHaveBeenCalledWith(OutboxEventEntity, {
-      eventId: event.eventId,
+    const [entity, row] = manager.insert.mock.calls[0] as [
+      unknown,
+      { eventId: string; payload: TripStatusChangedEvent },
+    ];
+
+    expect(entity).toBe(OutboxEventEntity);
+    expect(row).toEqual({
+      eventId: expect.any(String),
       topic: TripKafkaTopic.STATUS_CHANGED,
       key: '7',
-      payload: event,
+      payload: {
+        ...payload,
+        eventId: row.eventId,
+        occurredAt: expect.any(String),
+      },
     });
   });
 });

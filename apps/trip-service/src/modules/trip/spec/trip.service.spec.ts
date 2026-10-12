@@ -154,8 +154,6 @@ describe('TripService', () => {
         manager,
         TripKafkaTopic.STATUS_CHANGED,
         expect.objectContaining({
-          eventId: expect.any(String),
-          occurredAt: expect.any(String),
           tripId: trip.id,
           type: TripTypeEnum.RIDE,
           customerId: command.customerId,
@@ -165,8 +163,11 @@ describe('TripService', () => {
           actor: TripActorEnum.CUSTOMER,
           actorId: command.customerId,
           reason: null,
+          pickupAddress: command.pickupAddress,
+          dropoffAddress: command.dropoffAddress,
           proposedFare: command.proposedFare,
           agreedFare: null,
+          currency: 'EGP',
         }),
         String(trip.id),
       );

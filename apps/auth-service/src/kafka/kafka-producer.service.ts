@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Kafka, Producer } from 'kafkajs';
 
-import { AuthEventMap } from '@masr3/libs';
+import { AuthEventMap, createKafkaEvent, EventPayload } from '@masr3/libs';
 
 @Injectable()
 class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
@@ -35,8 +35,10 @@ class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
 
   async publish<Topic extends keyof AuthEventMap>(
     topic: Topic,
-    event: AuthEventMap[Topic],
+    payload: EventPayload<AuthEventMap[Topic]>,
   ) {
+    const event = createKafkaEvent<AuthEventMap[Topic]>(payload);
+
     try {
       await this.producer.send({
         topic,

@@ -133,7 +133,6 @@ describe('AuthService', () => {
       expect(kafkaProducer.publish).toHaveBeenCalledWith(
         AuthKafkaTopic.USER_REGISTER,
         expect.objectContaining({
-          eventId: expect.any(String),
           userId: user.id,
           email: user.email,
           firstName: user.firstName,

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
-import { TripEventMap } from '@masr3/libs';
+import { createKafkaEvent, EventPayload, TripEventMap } from '@masr3/libs';
 
 import OutboxEventEntity from './entities/outbox-event.entity';
 
@@ -12,9 +12,12 @@ class OutboxService {
   async enqueue<Topic extends keyof TripEventMap>(
     manager: EntityManager,
     topic: Topic,
-    event: TripEventMap[Topic],
+    payload: EventPayload<TripEventMap[Topic]>,
     key: string,
   ): Promise<void> {
+    // occurredAt is the moment of the change: this runs inside its transaction.
+    const event = createKafkaEvent<TripEventMap[Topic]>(payload);
+
     await manager.insert(OutboxEventEntity, {
       eventId: event.eventId,
       topic,

@@ -3,13 +3,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-
 import {
   AuthKafkaTopic,
   BaseAuthEvent,
   BEARER_TOKEN_TYPE,
-  dayjs,
+  EventPayload,
   REFRESH_TOKEN_AUDIENCE,
   TokenUseEnum,
   TokenVerifierService,
@@ -228,10 +226,8 @@ class AuthService {
     };
   }
 
-  private buildEvent(user: UserEntity): BaseAuthEvent {
+  private buildEvent(user: UserEntity): EventPayload<BaseAuthEvent> {
     return {
-      eventId: randomUUID(),
-      occurredAt: dayjs().toISOString(),
       userId: user.id,
       email: user.email,
       firstName: user.firstName,

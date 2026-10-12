@@ -13,8 +13,12 @@ interface TripStatusChangedEvent extends BaseKafkaEvent {
   actor: TripActorEnum;
   actorId: number | null;
   reason: string | null;
+  pickupAddress: string;
+  dropoffAddress: string;
   proposedFare: number;
   agreedFare: number | null;
+  // ISO 4217 code of both fares, e.g. EGP.
+  currency: string;
 }
 
 interface TripEventMap {
