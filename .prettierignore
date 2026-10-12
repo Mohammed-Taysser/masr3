@@ -4,3 +4,6 @@
 /.nx/cache
 /.nx/workspace-data
 package-lock.json
+# Handlebars notification templates: Prettier reflows the plain-text ones (SMS,
+# push, email text) as if they were HTML. Whitespace in them is content.
+apps/notification-service/src/modules/notification/templates/**/*.hbs

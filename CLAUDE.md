@@ -1,18 +1,20 @@
 # masr3
 
-masr3 is an inDrive/Uber-style platform that moves people (rides) and things (parcels). It is an
+masr3 (Arabic **مُسْرِع**, "fast"; use that spelling in Arabic localization) is an inDrive/Uber-style platform that moves people (rides) and things (parcels). It is an
 Nx monorepo of NestJS microservices plus a shared `libs` project. Package manager: **pnpm**.
 Docker runs only the infrastructure. The apps run on the host through Nx.
 
-| Service                | Port | Database (host port)      | Role                                                                               |
-| ---------------------- | ---- | ------------------------- | ---------------------------------------------------------------------------------- |
-| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*`                     |
-| `notification-service` | 7001 | `notification-db` (41001) | Consumes `auth.*`, sends email                                                     |
-| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding. Design: `apps/trip-service/docs/design.md` |
+| Service                | Port | Database (host port)      | Role                                                           |
+| ---------------------- | ---- | ------------------------- | -------------------------------------------------------------- |
+| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*` |
+| `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences      |
+| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding                         |
 
 All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`;
-trip-service also uses Redis (`localhost:44000`) for BullMQ jobs.
-`README.md` documents what exists, and is the reference for infrastructure, ports and Kafka.
+trip-service and notification-service also use Redis (`localhost:44000`) for BullMQ jobs.
+Each service is described, with diagrams, in `docs/services/<svc>.md`; the stack, ports and Kafka
+in `docs/infrastructure.md`. `README.md` is the entry point: the system overview, links to every
+doc, setup and commands.
 
 ## Commands
 
@@ -99,7 +101,6 @@ apps/<svc>/
   db.env          committed POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB (also read by docker)
   project.json    serve, migrate*, migration-show, typecheck (build/lint/test are inferred)
   webpack.config.js
-  docs/design.md  planned work (optional)
   src/
     main.ts         /api prefix, ValidationPipe({ whitelist, transform }),
                     ClassSerializerInterceptor({ excludeExtraneousValues: true }),
@@ -223,6 +224,26 @@ apps/<svc>/
 - **UI:** bull-board at `http://localhost:44001`. It discovers queues only at startup, so after a
   new or renamed queue first appears, run `docker compose up -d --no-deps --force-recreate bull-board`.
 
+## Notifications
+
+notification-service is the only sender; other services publish events. Design:
+`docs/services/notification-service.md`.
+
+- **Layers:** event handlers (`modules/events/`) turn an event into `NotificationIntent`s (type,
+  userId, raw data, dedupeKey); the notifier records them; BullMQ processors render and send.
+  Handlers never word or format anything.
+- **Adding a notification:** a `NotificationTypeEnum` value, a `NOTIFICATION_CATALOG` entry
+  (category, default channels, mandatory, secrets, deep link), its data interface in
+  `NotificationDataMap`, Handlebars templates in `templates/<type-in-kebab>/` for every part
+  its default channels need, and a handler mapping. The registry fails boot on a missing
+  template.
+- **Templates** get raw values and format them with helpers (`money`, `date`, `eq`). Only HTML
+  parts are escaped; no triple braces outside the layout. Prettier ignores `*.hbs`.
+- **Secrets** (a reset link) go in `intent.secrets`: job payload only, never a table column.
+- **Every channel gets a delivery row**, a skipped one with its `DeliverySkipReasonEnum`.
+- A new real channel = a provider implementing `ChannelProvider`, registered in
+  `ChannelProviderRegistry`, and a queue plus processor.
+
 ## Kafka
 
 - **Plaintext, no SASL.** Topics are created explicitly: `allowAutoTopicCreation: false` on
@@ -233,14 +254,16 @@ apps/<svc>/
   - `<domain>.events.ts`: payload interfaces plus `<Domain>EventMap`, exported with
     `export type`.
   - Export both from `libs/src/index.ts`.
-- **Every event** carries `eventId` (`randomUUID()`) and `occurredAt` (`dayjs().toISOString()`).
-  It is keyed by the aggregate id (`userId`, `tripId`) to keep ordering.
-- **Typing:** `publish<Topic>(topic, event: EventMap[Topic])`, so a mismatched payload does not
+- **Every event** carries `eventId` and `occurredAt`. Producers never set them: they pass an
+  `EventPayload<T>`, and `createKafkaEvent` (libs) fills both inside `publish` / the outbox's
+  `enqueue`. It is keyed by the aggregate id (`userId`, `tripId`) to keep ordering.
+- **Typing:** `publish<Topic>(topic, payload: EventPayload<EventMap[Topic]>)`, so a mismatched payload does not
   compile. Consumers map every topic to a handler.
 - **Consumer failures:**
   - A message that can never succeed (unknown topic, bad JSON, missing fields) is logged and
     skipped.
-  - A delivery failure is recorded as a `FAILED` row.
+  - A delivery failure is not a consumer failure: notification-service records it on the
+    delivery row and BullMQ retries it.
   - Anything else is rethrown, so the offset is not committed.
 - **Topic creation:** a service's `kafka:create-topics` target list must match its topic enum.
 - **Choosing how to publish:**
@@ -265,6 +288,8 @@ apps/<svc>/
 
 ## Scaffolding a new service
 
+The full walkthrough, with a checklist, is `docs/adding-a-service.md`. The rules:
+
 1. **Infrastructure.** Follow the existing database blocks:
    - In `docker-compose.yaml`, add `<name>-db` (`postgres:16-alpine`, `masr3-<name>-db`, the next
      host port in 41000–41099, `env_file: ./apps/<name>-service/db.env`, `pg_isready`
@@ -288,8 +313,9 @@ apps/<svc>/
 4. **Env.** Add env files and validation (with spec), `db.env`, and the next app port (7000+).
 5. **Schema.** Write the entities, then generate the first migration with the CLI.
 6. **E2E.** Point the e2e spec at `GET /api/health` and the service's port.
-7. **README.** Update the service count, port tables, setup `cp` line, Swagger table, and add a
-   short section on what exists.
+7. **Docs.** Write `docs/services/<name>.md` (copy the shape of `trip-service.md`) and link it
+   from the services table in `README.md`. Add its ports to `docs/infrastructure.md`. In `README.md`, update the
+   docs table, the ports table, the setup `cp` line and the Swagger table.
 8. **Verify.**
    - `lint`, `test` and `typecheck` for every project.
    - `migrate`, `migrate-revert`, `migrate`.
@@ -299,11 +325,20 @@ apps/<svc>/
 
 ## Docs and git
 
-- `README.md` describes only **what exists on `main`**. Planned work goes in
-  `apps/<svc>/docs/design.md` and moves to the README when built.
+- `README.md` and `docs/` describe only **what exists on `main`**.
+- **`docs/services/<svc>.md`** is each service's doc: what it owns, a context `flowchart`, an
+  `erDiagram`, one `sequenceDiagram` per important flow, `stateDiagram-v2` for status columns,
+  its events, and a **Planned** section for work not built yet.
+  - Diagrams are Mermaid. Update a diagram in the same change as the flow it shows.
+  - Planned work moves out of **Planned** into the doc's flows when it is built.
+- `docs/infrastructure.md` covers the Docker stack; `docs/adding-a-service.md` the steps for a new
+  service.
 - Cross-service patterns are written up in `docs/patterns/` (e.g. `transactional-outbox.md`) and
   linked from where they are used.
 - Commit messages use the `feat:` / `refactor:` / `chore:` prefixes. Commit only when asked, and
   keep unrelated changes (e.g. an auth-service rename) in their own commit.
 - Park large in-progress work as a commit on a `wip/*` branch, not `git stash`.
   `wip/full-implementation` is old test code, not a real implementation: never copy from it.
+- `wip/live-location` is real, parked work (Socket.IO live location, Redis GEO, PostGIS, nearby
+  trips, trip location batches, correlation IDs). It is not on `main`; resume from it rather than
+  rebuilding. Its commit message says how to bring the env and database back.
