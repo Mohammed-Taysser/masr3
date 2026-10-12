@@ -7,13 +7,23 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Consumer, EachMessagePayload, Kafka } from 'kafkajs';
 
-import { AuthEventMap, AuthKafkaTopic, BaseAuthEvent } from '@masr3/libs';
+import {
+  AuthEventMap,
+  AuthKafkaTopic,
+  BaseKafkaEvent,
+  TripEventMap,
+  TripKafkaTopic,
+} from '@masr3/libs';
 
-import NotificationService from '../modules/notification/notification.service';
+import AuthEventsHandler from '../modules/events/auth-events.handler';
+import TripEventsHandler from '../modules/events/trip-events.handler';
+import NotifierService from '../modules/notification/notifier.service';
+
+type ConsumedEventMap = AuthEventMap & TripEventMap;
 
 type TopicHandlers = {
-  [Topic in keyof AuthEventMap]: (
-    event: AuthEventMap[Topic],
+  [Topic in keyof ConsumedEventMap]: (
+    event: ConsumedEventMap[Topic],
   ) => Promise<unknown>;
 };
 
@@ -25,7 +35,9 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     configService: ConfigService,
-    private readonly notificationService: NotificationService,
+    private readonly authEvents: AuthEventsHandler,
+    private readonly tripEvents: TripEventsHandler,
+    private readonly notifier: NotifierService,
   ) {
     const kafka = new Kafka({
       brokers: [configService.getOrThrow<string>('KAFKA_BROKER')],
@@ -37,21 +49,29 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       allowAutoTopicCreation: false,
     });
 
-    // Typed against AuthEventMap: a topic added to the enum without a
+    // Typed against every consumed event map: a topic added to the enum without a
     // handler here is a compile error, not a silently ignored event.
+    // Each handler turns its event into notification intents; the notifier
+    // records them and queues the deliveries.
     this.handlers = {
       [AuthKafkaTopic.USER_REGISTER]: (event) =>
-        this.notificationService.handleUserRegistered(event),
+        this.notifier.notify(this.authEvents.handleUserRegistered(event)),
       [AuthKafkaTopic.USER_LOGGED_IN]: (event) =>
-        this.notificationService.handleUserLoggedIn(event),
-      [AuthKafkaTopic.USER_LOGGED_OUT]: (event) =>
-        this.notificationService.handleUserLoggedOut(event),
+        this.notifier.notify(this.authEvents.handleUserLoggedIn(event)),
+      [AuthKafkaTopic.USER_LOGGED_OUT]: () =>
+        this.notifier.notify(this.authEvents.handleUserLoggedOut()),
       [AuthKafkaTopic.USER_CHANGE_PASSWORD]: (event) =>
-        this.notificationService.handleUserChangedPassword(event),
+        this.notifier.notify(this.authEvents.handleUserChangedPassword(event)),
       [AuthKafkaTopic.PASSWORD_RESET_REQUESTED]: (event) =>
-        this.notificationService.handlePasswordResetRequested(event),
+        this.notifier.notify(
+          this.authEvents.handlePasswordResetRequested(event),
+        ),
       [AuthKafkaTopic.PASSWORD_RESET_COMPLETED]: (event) =>
-        this.notificationService.handlePasswordResetCompleted(event),
+        this.notifier.notify(
+          this.authEvents.handlePasswordResetCompleted(event),
+        ),
+      [TripKafkaTopic.STATUS_CHANGED]: async (event) =>
+        this.notifier.notify(await this.tripEvents.handleStatusChanged(event)),
     };
   }
 
@@ -59,18 +79,26 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     await this.consumer.connect();
 
     // fromBeginning only applies while the group has no committed offset:
-    // events published before this service first ran are still delivered.
+    // auth events published before this service first ran are still
+    // delivered. Trip events start at the latest offset, so subscribing to the
+    // topic for the first time doesn't email every past trip.
     await this.consumer.subscribe({
-      topics: Object.keys(this.handlers),
+      topics: Object.values(AuthKafkaTopic),
       fromBeginning: true,
+    });
+    await this.consumer.subscribe({
+      topics: [TripKafkaTopic.STATUS_CHANGED],
+      fromBeginning: false,
     });
 
     await this.consumer.run({
       eachMessage: (payload) => this.handleMessage(payload),
     });
 
+    const topics = Object.keys(this.handlers);
+
     this.logger.log(
-      `Subscribed to ${Object.keys(this.handlers).length} auth topics`,
+      `Successfully subscribed to ${topics.length} Kafka topic(s): ${topics.join(', ')}`,
     );
   }
 
@@ -79,7 +107,7 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * A message that can never succeed (unknown topic, bad JSON, no eventId) is
+   * A message that can never succeed (unknown topic, bad JSON, missing fields) is
    * logged and skipped, so it cannot block the partition behind it.
    *
    * Anything else — the database being down — is rethrown on purpose: the
@@ -91,7 +119,7 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     partition,
     message,
   }: EachMessagePayload) {
-    const handler = this.handlers[topic as keyof AuthEventMap];
+    const handler = this.handlers[topic as keyof ConsumedEventMap];
 
     if (!handler) {
       this.logger.warn(`No handler registered for topic ${topic}`);
@@ -99,7 +127,7 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const event = this.parse(message.value);
+    const event = KafkaConsumerService.parse(topic, message.value);
 
     if (!event) {
       this.logger.error(
@@ -112,21 +140,35 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     await handler(event as never);
   }
 
-  private parse(value: Buffer | null): BaseAuthEvent | null {
+  // Each topic names the fields its handler cannot do without.
+  private static parse(
+    topic: string,
+    value: Buffer | null,
+  ): BaseKafkaEvent | null {
     if (!value) {
       return null;
     }
 
-    try {
-      const event = JSON.parse(value.toString()) as BaseAuthEvent;
+    let event: Record<string, unknown>;
 
-      return typeof event?.eventId === 'string' &&
-        typeof event.email === 'string'
-        ? event
-        : null;
+    try {
+      event = JSON.parse(value.toString());
     } catch {
       return null;
     }
+
+    if (typeof event?.['eventId'] !== 'string') {
+      return null;
+    }
+
+    const isComplete =
+      topic === TripKafkaTopic.STATUS_CHANGED
+        ? Number.isInteger(event['tripId']) &&
+          Number.isInteger(event['customerId']) &&
+          typeof event['toStatus'] === 'string'
+        : typeof event['email'] === 'string';
+
+    return isComplete ? (event as unknown as BaseKafkaEvent) : null;
   }
 }
 

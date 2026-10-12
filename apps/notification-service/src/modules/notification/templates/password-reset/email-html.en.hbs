@@ -1,0 +1,6 @@
+{{!-- resetUrl is a secret: it reaches the template, never the database. --}}
+{{#> paragraph}}Someone asked to reset the password for your {{appName}} account. If it was you, choose a new one below.{{/paragraph}}
+{{> button url=resetUrl label="Choose a new password"}}
+{{#> note}}This link works once and expires in {{expiresInMinutes}} minutes.{{/note}}
+{{> link-fallback url=resetUrl}}
+{{#> paragraph}}Didn't ask for this? You can ignore this email. Your password stays the same.{{/paragraph}}

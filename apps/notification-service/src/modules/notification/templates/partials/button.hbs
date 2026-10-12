@@ -1,0 +1,11 @@
+<!--
+  A table-based button that keeps its shape in Outlook: {{> button url=resetUrl label="…"}}.
+  Pair it with link-fallback: some clients strip buttons.
+-->
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 8px 0 12px;">
+  <tr>
+    <td bgcolor="#0F5C4D" style="border-radius: 8px; background-color: #0F5C4D;">
+      <a href="{{url}}" target="_blank" style="display: inline-block; padding: 15px 30px; font-size: 16px; line-height: 1.2; font-weight: 700; color: #FFFFFF; text-decoration: none; border-radius: 8px;">{{label}}</a>
+    </td>
+  </tr>
+</table>

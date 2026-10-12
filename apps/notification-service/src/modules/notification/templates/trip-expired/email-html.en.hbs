@@ -1,0 +1,7 @@
+{{#> paragraph}}No driver accepted trip #{{tripId}} before the request expired.{{/paragraph}}
+{{#> panel}}
+  {{> row label="From" value=pickupAddress}}
+  {{> row label="To" value=dropoffAddress}}
+  {{> row label="Your fare" value=(money fare currency)}}
+{{/panel}}
+{{#> paragraph}}You can request the trip again. A higher fare usually gets an offer sooner.{{/paragraph}}

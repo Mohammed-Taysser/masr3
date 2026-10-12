@@ -33,9 +33,13 @@ async function bootstrap() {
   const builder = new DocumentBuilder()
     .setTitle('Notification Service')
     .setDescription(
-      'Sends masr3 emails in response to auth-service events consumed from Kafka. It exposes no notification endpoints yet — only the health probe.',
+      'Turns masr3 events into notifications on every channel (email, in-app; SMS, WhatsApp and push once providers exist), and serves the in-app inbox, channel preferences and the admin delivery log.',
     )
-    .setVersion('1.0');
+    .setVersion('1.0')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'bearer',
+    );
 
   const document = SwaggerModule.createDocument(app, builder.build());
   SwaggerModule.setup(`${globalPrefix}/docs`, app, document);

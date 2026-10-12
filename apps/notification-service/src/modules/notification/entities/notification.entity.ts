@@ -3,46 +3,74 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
+import { UQ_NOTIFICATIONS_DEDUPE_KEY } from '../notification.constant';
 import {
-  NotificationChannelEnum,
-  NotificationStatusEnum,
+  NotificationCategoryEnum,
+  NotificationTypeEnum,
 } from '../notification.enum';
+import { EmailAttachment } from '../notification.interface';
+import NotificationDeliveryEntity from './notification-delivery.entity';
 
 @Entity('notifications')
+@Index(UQ_NOTIFICATIONS_DEDUPE_KEY, ['dedupeKey'], { unique: true })
+@Index(['userId', 'inboxAt'])
 @Index(['createdAt'])
-@Index(['status'])
-@Index(['recipient'])
 class NotificationEntity {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'varchar', nullable: true, unique: true })
-  eventId: string | null;
+  @Column({ type: 'enum', enum: NotificationTypeEnum })
+  type: NotificationTypeEnum;
 
-  @Column({ type: 'enum', enum: NotificationChannelEnum })
-  channel: NotificationChannelEnum;
-
-  @Column()
-  recipient: string;
+  @Column({ type: 'enum', enum: NotificationCategoryEnum })
+  category: NotificationCategoryEnum;
 
   @Column()
-  template: string;
+  userId: number;
 
   @Column()
-  subject: string;
+  dedupeKey: string;
+
+  @Column({ type: 'jsonb' })
+  data: object;
+
+  @Column({ type: 'jsonb', nullable: true })
+  attachments: EmailAttachment[] | null;
+
+  @Column()
+  locale: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  recipientName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  title: string | null;
 
   @Column({ type: 'text', nullable: true })
   body: string | null;
 
-  @Column({ type: 'enum', enum: NotificationStatusEnum })
-  status: NotificationStatusEnum;
-
   @Column({ type: 'varchar', nullable: true })
-  error: string | null;
+  deepLink: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  inboxAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  readAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
+
+  @OneToMany(
+    () => NotificationDeliveryEntity,
+    (delivery) => delivery.notification,
+  )
+  deliveries: NotificationDeliveryEntity[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

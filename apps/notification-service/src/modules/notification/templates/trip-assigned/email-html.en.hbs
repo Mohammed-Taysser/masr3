@@ -1,0 +1,8 @@
+{{#> paragraph}}You have trip #{{tripId}}. Head to the pickup now.{{/paragraph}}
+{{#> panel}}
+  {{#if customerFirstName}}{{> row label="Customer" value=customerFirstName}}{{/if}}
+  {{> row label="From" value=pickupAddress}}
+  {{> row label="To" value=dropoffAddress}}
+  {{> row label="Fare" value=(money fare currency)}}
+{{/panel}}
+{{#> paragraph}}Let the customer know through the app if anything delays you.{{/paragraph}}

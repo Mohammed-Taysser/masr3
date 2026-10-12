@@ -34,21 +34,31 @@ class MailService implements OnModuleInit {
 
       this.logger.log(`SMTP connection verified (${host}:${port})`);
     } catch (error) {
-      // Not fatal: a send that fails later becomes a FAILED row.
+      // Not fatal: a send that fails later is retried, then marked FAILED.
       this.logger.warn(
         `SMTP connection could not be verified: ${(error as Error).message}`,
       );
     }
   }
 
-  async sendMail(options: SendMailOptions) {
-    await this.transporter.sendMail({
+  // Returns the transport's message id.
+  async sendMail(options: SendMailOptions): Promise<string> {
+    const info = await this.transporter.sendMail({
       from: this.configService.getOrThrow<string>('MAIL_FROM'),
       to: options.to,
       subject: options.subject,
       html: options.html,
       text: options.text,
+      attachments: options.attachments?.map(
+        ({ filename, contentType, url }) => ({
+          filename,
+          contentType,
+          href: url,
+        }),
+      ),
     });
+
+    return info.messageId;
   }
 }
 

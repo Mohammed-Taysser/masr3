@@ -3,111 +3,105 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
 
 import { dayjs } from '@masr3/libs';
 
-import MailService from '../src/modules/mail/mail.service';
-import { SendMailOptions } from '../src/modules/mail/mail.interface';
-import NotificationEntity from '../src/modules/notification/entities/notification.entity';
-import { NotificationTemplateEnum } from '../src/modules/notification/notification.enum';
-import NotificationService from '../src/modules/notification/notification.service';
-import TemplateService from '../src/modules/notification/templates/template.service';
+import {
+  DEFAULT_LOCALE,
+  NOTIFICATION_CATALOG,
+} from '../src/modules/notification/notification.constant';
+import {
+  NotificationChannelEnum,
+  NotificationTypeEnum,
+  TripCancelledByEnum,
+} from '../src/modules/notification/notification.enum';
+import {
+  NotificationDataMap,
+  NotificationSecrets,
+  RenderedMessage,
+} from '../src/modules/notification/notification.interface';
+import RendererService from '../src/modules/notification/rendering/renderer.service';
+import TemplateRegistryService from '../src/modules/notification/rendering/template-registry.service';
 
-/**
- * Renders every template through the real NotificationService handlers, so a
- * preview is exactly what would be sent. Nothing is sent and nothing is
- * stored: the mail transport and repository are in-memory stand-ins.
- */
+// Renders every notification type on each of its default channels through the
+// real renderer, so a preview is exactly what would be sent. Nothing is sent.
 
 const OUT_DIR = path.resolve(
-  process.argv[2] ?? path.join(process.cwd(), 'dist', 'email-previews'),
-);
-
-interface Preview {
-  template: NotificationTemplateEnum;
-  sent: SendMailOptions;
-  stored: string | null;
-}
-
-const config: Record<string, string> = {
-  APP_NAME: 'Masr3',
-  PASSWORD_RESET_URL_BASE: 'http://localhost:3000/reset-password',
-  MAIL_FROM: 'Masr3 <no-reply@masr3.local>',
-};
-
-const configService = {
-  get: (key: string) => config[key],
-  getOrThrow: (key: string) => {
-    if (!(key in config)) {
-      throw new Error(`Preview config is missing ${key}`);
-    }
-
-    return config[key];
-  },
-} as unknown as ConfigService;
-
-let lastSent: SendMailOptions | null = null;
-
-const mailService = {
-  sendMail: async (options: SendMailOptions) => {
-    lastSent = options;
-  },
-} as unknown as MailService;
-
-const repository = {
-  create: (row: Partial<NotificationEntity>) => row,
-  save: async (row: NotificationEntity) => row,
-} as unknown as Repository<NotificationEntity>;
-
-const service = new NotificationService(
-  configService,
-  mailService,
-  new TemplateService(),
-  repository,
+  process.argv[2] ?? path.join(process.cwd(), 'dist', 'notification-previews'),
 );
 
 const now = dayjs();
-
-const base = {
-  occurredAt: now.toISOString(),
-  userId: 1,
-  email: 'demo.customer@masr3.local',
-  firstName: 'Demo',
+const trip = {
+  tripId: 42,
+  pickupAddress: 'Tahrir Square, Cairo',
+  dropoffAddress: '26th of July Street, Zamalek',
 };
 
-const event = (template: NotificationTemplateEnum) => ({
-  ...base,
-  eventId: `preview-${template}`,
-});
+const SAMPLE_DATA: NotificationDataMap = {
+  [NotificationTypeEnum.WELCOME]: { email: 'demo.customer@masr3.local' },
+  [NotificationTypeEnum.NEW_LOGIN]: {
+    occurredAt: now.toISOString(),
+    ip: '203.0.113.42',
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0',
+  },
+  [NotificationTypeEnum.PASSWORD_CHANGED]: { occurredAt: now.toISOString() },
+  [NotificationTypeEnum.PASSWORD_RESET]: { expiresInMinutes: 10 },
+  [NotificationTypeEnum.PASSWORD_RESET_COMPLETED]: {
+    occurredAt: now.toISOString(),
+  },
+  [NotificationTypeEnum.TRIP_CONFIRMED]: {
+    ...trip,
+    fare: 95,
+    currency: 'EGP',
+    driverName: 'Omar Driver',
+  },
+  [NotificationTypeEnum.TRIP_ASSIGNED]: {
+    ...trip,
+    fare: 95,
+    currency: 'EGP',
+    customerFirstName: 'Demo',
+  },
+  [NotificationTypeEnum.TRIP_RECEIPT]: {
+    ...trip,
+    fare: 95,
+    currency: 'EGP',
+    completedAt: now.toISOString(),
+    driverName: 'Omar Driver',
+  },
+  [NotificationTypeEnum.TRIP_CANCELLED]: {
+    ...trip,
+    cancelledBy: TripCancelledByEnum.DRIVER,
+    reason: 'Car broke down',
+  },
+  [NotificationTypeEnum.TRIP_EXPIRED]: { ...trip, fare: 85, currency: 'EGP' },
+};
 
-const renderers: Record<
-  NotificationTemplateEnum,
-  () => Promise<NotificationEntity | null>
+const SAMPLE_SECRETS: Partial<
+  Record<NotificationTypeEnum, NotificationSecrets>
 > = {
-  [NotificationTemplateEnum.WELCOME]: () =>
-    service.handleUserRegistered(event(NotificationTemplateEnum.WELCOME)),
-  [NotificationTemplateEnum.NEW_LOGIN]: () =>
-    service.handleUserLoggedIn({
-      ...event(NotificationTemplateEnum.NEW_LOGIN),
-      ip: '203.0.113.42',
-      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0',
-    }),
-  [NotificationTemplateEnum.PASSWORD_CHANGED]: () =>
-    service.handleUserChangedPassword(
-      event(NotificationTemplateEnum.PASSWORD_CHANGED),
-    ),
-  [NotificationTemplateEnum.PASSWORD_RESET]: () =>
-    service.handlePasswordResetRequested({
-      ...event(NotificationTemplateEnum.PASSWORD_RESET),
-      resetToken: 'a-real-looking-reset-token-0123456789abcdef',
-      expiresAt: now.add(10, 'minute').toISOString(),
-    }),
-  [NotificationTemplateEnum.PASSWORD_RESET_COMPLETED]: () =>
-    service.handlePasswordResetCompleted(
-      event(NotificationTemplateEnum.PASSWORD_RESET_COMPLETED),
-    ),
+  [NotificationTypeEnum.PASSWORD_RESET]: {
+    resetUrl: 'http://localhost:3000/reset-password?token=preview-token',
+  },
 };
+
+const SAMPLE_ADDRESSES: Record<NotificationChannelEnum, string> = {
+  [NotificationChannelEnum.EMAIL]: 'demo.customer@masr3.local',
+  [NotificationChannelEnum.SMS]: '+201000000000',
+  [NotificationChannelEnum.WHATSAPP]: '+201000000000',
+  [NotificationChannelEnum.PUSH]: 'device-token',
+  [NotificationChannelEnum.IN_APP]: '1',
+};
+
+interface Preview {
+  type: NotificationTypeEnum;
+  channel: NotificationChannelEnum;
+  files: string[];
+  summary: string;
+}
+
+const renderer = new RendererService(new TemplateRegistryService(), {
+  getOrThrow: () => 'Masr3',
+} as unknown as ConfigService);
 
 function escapeHtml(value: string): string {
   return value
@@ -117,20 +111,34 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function write(
+  base: string,
+  message: RenderedMessage,
+): { files: string[]; summary: string } {
+  if ('html' in message) {
+    fs.writeFileSync(path.join(OUT_DIR, `${base}.html`), message.html);
+    fs.writeFileSync(path.join(OUT_DIR, `${base}.txt`), message.text);
+
+    return { files: [`${base}.html`, `${base}.txt`], summary: message.subject };
+  }
+
+  const text =
+    'text' in message ? message.text : `${message.title}\n\n${message.body}`;
+
+  fs.writeFileSync(path.join(OUT_DIR, `${base}.txt`), text);
+
+  return { files: [`${base}.txt`], summary: text.split('\n')[0] };
+}
+
 function renderIndex(previews: Preview[]): string {
   const rows = previews
-    .map(({ template, sent, stored }) => {
-      const storedLink =
-        stored !== null && stored !== sent.html
-          ? ` · <a href="${template}.stored.html">stored copy</a>`
-          : '';
-
-      return `      <li>
-        <strong>${escapeHtml(template)}</strong>
-        <span class="subject">${escapeHtml(sent.subject)}</span>
-        <span class="links"><a href="${template}.html">html</a> · <a href="${template}.txt">text</a>${storedLink}</span>
-      </li>`;
-    })
+    .map(
+      ({ type, channel, files, summary }) => `      <li>
+        <strong>${type}</strong> <span class="channel">${channel}</span>
+        <span class="subject">${escapeHtml(summary)}</span>
+        <span class="links">${files.map((file) => `<a href="${file}">${path.extname(file).slice(1)}</a>`).join(' · ')}</span>
+      </li>`,
+    )
     .join('\n');
 
   return `<!doctype html>
@@ -138,19 +146,20 @@ function renderIndex(previews: Preview[]): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Email previews</title>
+    <title>Notification previews</title>
     <style>
-      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #0f172a; }
+      body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #0f172a; }
       li { display: grid; gap: 2px; padding: 12px 0; border-bottom: 1px solid #e2e8f0; list-style: none; }
       ul { padding: 0; }
+      .channel { font-size: 12px; color: #0f5c4d; font-weight: 600; }
       .subject { color: #475569; }
       .links { font-size: 14px; }
       p { color: #64748b; }
     </style>
   </head>
   <body>
-    <h1>Email previews</h1>
-    <p>${previews.length} templates · generated ${escapeHtml(now.utc().format('D MMMM YYYY, HH:mm [UTC]'))}. A "stored copy" is what is saved in the notifications table when it differs from what is sent (the reset token is masked).</p>
+    <h1>Notification previews</h1>
+    <p>${previews.length} renders · locale ${DEFAULT_LOCALE} · generated ${escapeHtml(now.utc().format('D MMMM YYYY, HH:mm [UTC]'))}.</p>
     <ul>
 ${rows}
     </ul>
@@ -159,34 +168,30 @@ ${rows}
 `;
 }
 
-async function main() {
+function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const previews: Preview[] = [];
 
-  for (const template of Object.values(NotificationTemplateEnum)) {
-    lastSent = null;
+  for (const [type, entry] of Object.entries(NOTIFICATION_CATALOG) as [
+    NotificationTypeEnum,
+    (typeof NOTIFICATION_CATALOG)[NotificationTypeEnum],
+  ][]) {
+    for (const channel of entry.defaultChannels) {
+      const message = renderer.render({
+        type,
+        channel,
+        locale: DEFAULT_LOCALE,
+        firstName: 'Demo',
+        address: SAMPLE_ADDRESSES[channel],
+        data: SAMPLE_DATA[type],
+        secrets: SAMPLE_SECRETS[type],
+      });
+      const base = `${type.toLowerCase()}.${channel.toLowerCase()}`;
 
-    const row = await renderers[template]();
-
-    if (!lastSent) {
-      throw new Error(`Template ${template} produced no email`);
+      previews.push({ type, channel, ...write(base, message) });
+      console.log(`Rendered ${type} ${channel}`);
     }
-
-    const sent: SendMailOptions = lastSent;
-
-    fs.writeFileSync(path.join(OUT_DIR, `${template}.html`), sent.html);
-    fs.writeFileSync(path.join(OUT_DIR, `${template}.txt`), sent.text);
-
-    const stored = row?.body ?? null;
-
-    if (stored !== null && stored !== sent.html) {
-      fs.writeFileSync(path.join(OUT_DIR, `${template}.stored.html`), stored);
-    }
-
-    previews.push({ template, sent, stored });
-
-    console.log(`Rendered ${template}`);
   }
 
   fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderIndex(previews));
@@ -195,7 +200,4 @@ async function main() {
   console.log(`Open ${path.join(OUT_DIR, 'index.html')}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main();

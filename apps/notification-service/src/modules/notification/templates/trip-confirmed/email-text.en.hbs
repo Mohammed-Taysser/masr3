@@ -1,0 +1,8 @@
+{{#if driverName}}{{driverName}} is your driver for trip #{{tripId}}.{{else}}A driver is assigned to trip #{{tripId}}.{{/if}} They will head to your pickup now.
+
+{{#if driverName}}Driver: {{driverName}}
+{{/if}}From: {{pickupAddress}}
+To: {{dropoffAddress}}
+Fare: {{money fare currency}}
+
+Please be ready at your pickup point.

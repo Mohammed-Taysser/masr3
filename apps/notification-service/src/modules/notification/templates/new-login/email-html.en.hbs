@@ -1,0 +1,8 @@
+{{#> paragraph}}Someone just signed in to your {{appName}} account.{{/paragraph}}
+{{#> panel}}
+  {{> row label="Time" value=(date occurredAt)}}
+  {{#if ip}}{{> row label="IP address" value=ip}}{{/if}}
+  {{#if userAgent}}{{> row label="Device" value=userAgent}}{{/if}}
+{{/panel}}
+{{#> paragraph}}If this was you, you don't need to do anything.{{/paragraph}}
+{{#> paragraph}}If it wasn't, change your password now. Changing it signs you out on every device.{{/paragraph}}

@@ -1,0 +1,9 @@
+{{#> paragraph}}Thanks for riding with {{appName}}. Here is the receipt for trip #{{tripId}}.{{/paragraph}}
+{{#> panel}}
+  {{#if driverName}}{{> row label="Driver" value=driverName}}{{/if}}
+  {{> row label="From" value=pickupAddress}}
+  {{> row label="To" value=dropoffAddress}}
+  {{> row label="Completed" value=(date completedAt)}}
+  {{> row label="Fare paid" value=(money fare currency)}}
+{{/panel}}
+{{#> paragraph}}Keep this email for your records.{{/paragraph}}

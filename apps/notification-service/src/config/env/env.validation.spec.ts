@@ -29,6 +29,9 @@ const validEnv = {
 
   AUTH_SERVICE_URL: 'http://localhost:7000/api',
   SERVICE_CLIENT_SECRET: 'ab'.repeat(32),
+
+  REDIS_HOST: 'localhost',
+  REDIS_PORT: '44000',
 };
 
 describe('validate', () => {
@@ -86,6 +89,8 @@ describe('validate', () => {
       'KAFKA_CONSUMER_GROUP_ID',
       'AUTH_SERVICE_URL',
       'SERVICE_CLIENT_SECRET',
+      'REDIS_HOST',
+      'REDIS_PORT',
     ])('throws when %s is missing', (property) => {
       const config = { ...validEnv };
 

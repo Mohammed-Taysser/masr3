@@ -112,6 +112,15 @@ class EnvironmentVariables {
 
   @Matches(SERVICE_CLIENT_SECRET_PATTERN)
   SERVICE_CLIENT_SECRET: string;
+
+  @IsString()
+  @MinLength(1)
+  REDIS_HOST: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  REDIS_PORT: number;
 }
 
 function validate(config: Record<string, unknown>): EnvironmentVariables {

@@ -1,0 +1,8 @@
+{{#> paragraph}}{{#if driverName}}{{driverName}} is your driver for trip #{{tripId}}.{{else}}A driver is assigned to trip #{{tripId}}.{{/if}} They will head to your pickup now.{{/paragraph}}
+{{#> panel}}
+  {{#if driverName}}{{> row label="Driver" value=driverName}}{{/if}}
+  {{> row label="From" value=pickupAddress}}
+  {{> row label="To" value=dropoffAddress}}
+  {{> row label="Fare" value=(money fare currency)}}
+{{/panel}}
+{{#> paragraph}}Please be ready at your pickup point.{{/paragraph}}

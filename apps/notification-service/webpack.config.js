@@ -20,7 +20,7 @@ module.exports = {
         {
           input: './src/modules/notification/templates',
           output: './templates',
-          glob: '**/*.{html,txt}',
+          glob: '**/*.hbs',
         },
       ],
       optimization: false,

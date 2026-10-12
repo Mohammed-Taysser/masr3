@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import NotificationDeliveryEntity from '../modules/notification/entities/notification-delivery.entity';
 import NotificationEntity from '../modules/notification/entities/notification.entity';
+import NotificationPreferenceEntity from '../modules/preferences/entities/notification-preference.entity';
 
 @Module({
   imports: [
@@ -15,7 +17,11 @@ import NotificationEntity from '../modules/notification/entities/notification.en
         username: configService.get<string>('POSTGRES_USER'),
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
-        entities: [NotificationEntity],
+        entities: [
+          NotificationEntity,
+          NotificationDeliveryEntity,
+          NotificationPreferenceEntity,
+        ],
         synchronize: false,
       }),
     }),

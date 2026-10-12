@@ -1,0 +1,7 @@
+{{#> paragraph}}Trip #{{tripId}} was cancelled by {{> cancelled-by}}.{{/paragraph}}
+{{#> panel}}
+  {{> row label="From" value=pickupAddress}}
+  {{> row label="To" value=dropoffAddress}}
+  {{#if reason}}{{> row label="Reason" value=reason}}{{/if}}
+{{/panel}}
+{{#> paragraph}}You don't need to do anything. Any offer on this trip is closed.{{/paragraph}}
