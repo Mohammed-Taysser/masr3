@@ -1,5 +1,8 @@
 import { TripActorEnum, TripStatusEnum, UserRoleEnum } from '@masr3/libs';
 
+import type TripOfferEntity from './entities/trip-offer.entity';
+import type TripEntity from './entities/trip.entity';
+
 const TRIP_CURRENCY = 'EGP';
 
 // decimal(10, 2): up to 99,999,999.99 TRIP_CURRENCY.
@@ -69,6 +72,36 @@ const ROLE_TO_TRIP_ACTOR: Readonly<Record<UserRoleEnum, TripActorEnum>> = {
   [UserRoleEnum.ADMIN]: TripActorEnum.ADMIN,
 };
 
+// SYSTEM (the expiry job) has no role: it is audited as a SYSTEM actor.
+const TRIP_ACTOR_TO_ROLE: Readonly<Record<TripActorEnum, UserRoleEnum | null>> =
+  {
+    [TripActorEnum.CUSTOMER]: UserRoleEnum.CUSTOMER,
+    [TripActorEnum.DRIVER]: UserRoleEnum.DRIVER,
+    [TripActorEnum.ADMIN]: UserRoleEnum.ADMIN,
+    [TripActorEnum.SYSTEM]: null,
+  };
+
+// The only columns an audit diff may contain. Recipient contact details stay
+// out: the audit trail is read by admins long after the delivery.
+const TRIP_AUDITED_FIELDS: readonly (keyof TripEntity & string)[] = [
+  'type',
+  'status',
+  'customerId',
+  'driverId',
+  'pickupAddress',
+  'dropoffAddress',
+  'proposedFare',
+  'agreedFare',
+  'expiresAt',
+];
+
+const TRIP_OFFER_AUDITED_FIELDS: readonly (keyof TripOfferEntity & string)[] = [
+  'tripId',
+  'driverId',
+  'amount',
+  'status',
+];
+
 export {
   TRIP_CURRENCY,
   FARE_PRECISION,
@@ -81,6 +114,9 @@ export {
   UQ_TRIPS_ACTIVE_DRIVER,
   UQ_TRIP_OFFERS_PENDING_DRIVER,
   ROLE_TO_TRIP_ACTOR,
+  TRIP_ACTOR_TO_ROLE,
+  TRIP_AUDITED_FIELDS,
+  TRIP_OFFER_AUDITED_FIELDS,
   TRIP_EXPIRY_QUEUE,
   TRIP_EXPIRY_SWEEP_SCHEDULER_ID,
 };

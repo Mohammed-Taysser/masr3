@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import AuditModule from '../audit/audit.module';
 import OutboxModule from '../outbox/outbox.module';
 import TripOfferEntity from './entities/trip-offer.entity';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
@@ -16,6 +17,7 @@ import TripService from './trip.service';
 
 @Module({
   imports: [
+    AuditModule,
     OutboxModule,
     TypeOrmModule.forFeature([
       TripEntity,

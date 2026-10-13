@@ -1,8 +1,10 @@
 # Transactional outbox
 
 How a masr3 service publishes Kafka events that must never be lost or invented. trip-service is
-the first user (`apps/trip-service/src/modules/outbox/`). Any service with events that matter can
-follow the same steps.
+the reference (`apps/trip-service/src/modules/outbox/`). auth-service uses a copy for its audit
+events (`apps/auth-service/src/modules/outbox/`). Any service with events that matter can follow
+the same steps, and **every service that produces audit events must** (see
+[audit-service](../services/audit-service.md)).
 
 ## The problem: a dual write
 
@@ -15,7 +17,8 @@ no transaction, so the work can fail half-way in either order:
 | Send, then commit to DB | The commit fails or rolls back                | **Phantom event.** Consumers act on a change that never happened. |
 
 Retrying the send in a `catch` doesn't fix the first case: the process can die before it retries.
-auth-service publishes best-effort and accepts the first case (see "When not to use it").
+auth-service's `auth.*` events are published best-effort and accept the first case (see "When not
+to use it"); its audit events go through the outbox.
 
 ## The fix
 
@@ -63,7 +66,8 @@ also helps keep order:
 
 - It is idempotent, with one request in flight, so a kafkajs-level retry can't reorder or
   duplicate messages within a partition.
-- It connects lazily, so the service boots and keeps accepting writes while Kafka is down.
+- trip-service's connects lazily, so the service boots and keeps accepting writes while Kafka is
+  down. auth-service's connects at boot, because its best-effort `auth.*` publishing shares it.
 
 ## Guarantees
 
@@ -119,15 +123,20 @@ is shared between clients at transaction boundaries.
    (`REDIS_HOST` / `REDIS_PORT`).
    Give the service its own `OUTBOX_RELAY_LOCK_ID`. Advisory locks are per database, so this only
    matters if two services ever share one, but distinct ids cost nothing.
-5. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `OUTBOX_POLL_INTERVAL_MS`,
-   `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`.
-6. **Topic:** add a `kafka:create-topics` target. Topics are never auto-created.
+   **Give the queue and scheduler their own names** (auth-service: `AUTH-OUTBOX-RELAY`,
+   `AUTH-OUTBOX-RELAY-EVERY-INTERVAL`). Every service shares one Redis with BullMQ's default
+   prefix, so a second `OUTBOX-RELAY` would be the same queue: trip-service's worker would take
+   the other service's relay jobs and relay its own outbox instead.
+5. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `REDIS_HOST`, `REDIS_PORT`,
+   `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`.
+6. **Topic:** add a `kafka:create-topics` target for the topics this service owns. Topics are
+   never auto-created. `audit.action-recorded` is created by audit-service.
 7. **Consumers:** deduplicate on `eventId`.
 
 ## When not to use it
 
 When a dropped event is acceptable and an extra table isn't worth it. auth-service's sign-in alert
 is an example: if Kafka is down and one "new sign-in" email never goes out, nothing is corrupted.
-auth-service therefore publishes directly and logs failures. Use the outbox when a lost or phantom
+auth-service therefore publishes its `auth.*` events directly and logs failures. Use the outbox when a lost or phantom
 event would leave another service, or a user, with the wrong picture of the system: a trip
 accepted, a payment captured.

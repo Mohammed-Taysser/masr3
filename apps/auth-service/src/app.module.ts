@@ -7,6 +7,7 @@ import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs';
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
+import QueueModule from './queue/queue.module';
 import AuthModule from './modules/auth/auth.module';
 import ServiceClientModule from './modules/service-client/service-client.module';
 import LocalKeyResolver from './modules/signing-key/local-key.resolver';
@@ -20,6 +21,7 @@ import AppThrottlerModule from './throttling/AppThrottlerModule.module';
     AppConfigModule,
     AppThrottlerModule,
     DatabaseModule,
+    QueueModule,
     AuthenticationModule.register({
       imports: [SigningKeyModule, UsersModule],
       keyResolver: LocalKeyResolver,

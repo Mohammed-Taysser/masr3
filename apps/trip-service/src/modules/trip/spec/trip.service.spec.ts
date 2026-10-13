@@ -13,8 +13,12 @@ import {
 } from 'typeorm';
 
 import {
+  AuditActionEnum,
+  AuditActorTypeEnum,
+  AuditEntityTypeEnum,
   AuthenticatedUser,
   dayjs,
+  SYSTEM_AUDIT_ACTOR,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusEnum,
@@ -22,6 +26,7 @@ import {
   UserRoleEnum,
 } from '@masr3/libs';
 
+import AuditRecorderService from '../../audit/audit-recorder.service';
 import OutboxService from '../../outbox/outbox.service';
 import TripOfferEntity from '../entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../entities/trip-status-history.entity';
@@ -50,6 +55,7 @@ describe('TripService', () => {
   let historyRepository: jest.Mocked<Repository<TripStatusHistoryEntity>>;
   let tripRepository: jest.Mocked<Repository<TripEntity>>;
   let outboxService: jest.Mocked<OutboxService>;
+  let auditRecorder: jest.Mocked<AuditRecorderService>;
   let expiryQueue: jest.Mocked<Queue>;
 
   const command: CreateTripCommand = {
@@ -105,6 +111,10 @@ describe('TripService', () => {
       enqueue: jest.fn(),
     } as unknown as jest.Mocked<OutboxService>;
 
+    auditRecorder = {
+      record: jest.fn(),
+    } as unknown as jest.Mocked<AuditRecorderService>;
+
     expiryQueue = {
       add: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<Queue>;
@@ -113,6 +123,7 @@ describe('TripService', () => {
       dataSource,
       configService,
       outboxService,
+      auditRecorder,
       tripRepository,
       historyRepository,
       expiryQueue,
@@ -171,6 +182,25 @@ describe('TripService', () => {
         }),
         String(trip.id),
       );
+    });
+
+    it('records a TRIP CREATED audit by the customer in the same transaction', async () => {
+      await service.create(command);
+
+      expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
+        action: AuditActionEnum.CREATED,
+        entity: { type: AuditEntityTypeEnum.TRIP, id: trip.id },
+        actor: {
+          type: AuditActorTypeEnum.USER,
+          id: command.customerId,
+          role: UserRoleEnum.CUSTOMER,
+        },
+        changes: expect.objectContaining({
+          status: { old: null, new: TripStatusEnum.REQUESTED },
+          proposedFare: { old: null, new: command.proposedFare },
+        }),
+        metadata: null,
+      });
     });
 
     it('expires the request after TRIP_REQUEST_TTL_MS', async () => {
@@ -300,6 +330,84 @@ describe('TripService', () => {
         }),
         String(trip.id),
       );
+      expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
+        action: AuditActionEnum.STATUS_CHANGED,
+        entity: { type: AuditEntityTypeEnum.TRIP, id: trip.id },
+        actor: {
+          type: AuditActorTypeEnum.USER,
+          id: trip.customerId,
+          role: UserRoleEnum.CUSTOMER,
+        },
+        changes: {
+          status: {
+            old: TripStatusEnum.REQUESTED,
+            new: TripStatusEnum.ACCEPTED,
+          },
+          driverId: { old: null, new: 2 },
+          agreedFare: { old: null, new: 90 },
+        },
+        metadata: { reason: null, acceptedOfferId: null },
+      });
+    });
+
+    it('audits a SYSTEM expiry as a SYSTEM actor, with no id or role', async () => {
+      manager.findOne.mockResolvedValue({
+        ...trip,
+        expiresAt: dayjs().subtract(1, 'second').toDate(),
+      });
+      manager.findOneByOrFail.mockResolvedValue({
+        ...trip,
+        status: TripStatusEnum.EXPIRED,
+      } as TripEntity);
+
+      await service.transition({
+        tripId: trip.id,
+        to: TripStatusEnum.EXPIRED,
+        actor: TripActorEnum.SYSTEM,
+        actorId: null,
+      });
+
+      expect(auditRecorder.record).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({
+          action: AuditActionEnum.STATUS_CHANGED,
+          actor: SYSTEM_AUDIT_ACTOR,
+        }),
+      );
+    });
+
+    it.each([
+      [TripActorEnum.DRIVER, UserRoleEnum.DRIVER],
+      [TripActorEnum.ADMIN, UserRoleEnum.ADMIN],
+    ])('keeps the role of a %s actor', async (actor, role) => {
+      manager.findOne.mockResolvedValue({
+        ...trip,
+        status: TripStatusEnum.ACCEPTED,
+        driverId: 2,
+      });
+      manager.findOneByOrFail.mockResolvedValue({
+        ...trip,
+        status: TripStatusEnum.CANCELLED,
+        driverId: 2,
+      } as TripEntity);
+
+      await service.transition({
+        tripId: trip.id,
+        to: TripStatusEnum.CANCELLED,
+        actor,
+        actorId: actor === TripActorEnum.DRIVER ? 2 : 9,
+      });
+
+      expect(auditRecorder.record).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({
+          actor: {
+            type: AuditActorTypeEnum.USER,
+            id: actor === TripActorEnum.DRIVER ? 2 : 9,
+            role,
+          },
+        }),
+      );
     });
 
     it('writes nothing when the move is not allowed', async () => {
@@ -317,6 +425,7 @@ describe('TripService', () => {
       expect(manager.update).not.toHaveBeenCalled();
       expect(manager.insert).not.toHaveBeenCalled();
       expect(outboxService.enqueue).not.toHaveBeenCalled();
+      expect(auditRecorder.record).not.toHaveBeenCalled();
     });
 
     it('turns the active-driver index violation into a conflict', async () => {

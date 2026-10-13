@@ -72,7 +72,11 @@ class SigningKeyService {
   }
 
   jwks(): { keys: PublicJsonWebKey[] } {
-    return { keys: [...this.publishedKeys.values()].map(({ jwk }) => jwk) };
+    return {
+      keys: [...this.publishedKeys.values()].map(
+        (publishedKey) => publishedKey.jwk,
+      ),
+    };
   }
 
   private assertSigningKey(key: KeyObject, variable: string): void {

@@ -33,11 +33,11 @@ class ListUsersQueryDto {
     example: true,
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
+  @Transform((params) => {
+    if (params.value === 'true' || params.value === true) return true;
+    if (params.value === 'false' || params.value === false) return false;
 
-    return value;
+    return params.value;
   })
   @IsBoolean()
   isActive?: boolean;

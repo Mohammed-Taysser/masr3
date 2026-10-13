@@ -1,16 +1,28 @@
 export * from './lib/libs.module';
+
 export * from './lib/kafka/auth/auth.events';
 export * from './lib/kafka/auth/auth.topics';
+
 export * from './lib/kafka/kafka.events';
+
 export * from './lib/kafka/trip/trip.enum';
 export * from './lib/kafka/trip/trip.events';
 export * from './lib/kafka/trip/trip.topics';
+
+export * from './lib/kafka/audit/audit.builders';
+export * from './lib/kafka/audit/audit.constant';
+export * from './lib/kafka/audit/audit.enum';
+export * from './lib/kafka/audit/audit.events';
+export * from './lib/kafka/audit/audit.topics';
+
 export * from './lib/date/timezone';
 export * from './lib/date/dayjs';
+
 export * from './lib/auth/auth.enum';
 export * from './lib/auth/auth.constant';
 export * from './lib/auth/auth.interface';
 export * from './lib/auth/auth.decorator';
+
 export { default as AuthenticationGuard } from './lib/auth/authentication.guard';
 export { default as AuthenticationModule } from './lib/auth/authentication.module';
 export { default as JwksKeyResolver } from './lib/auth/jwks-key.resolver';

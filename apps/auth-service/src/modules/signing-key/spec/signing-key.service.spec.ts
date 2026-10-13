@@ -107,7 +107,7 @@ describe('SigningKeyService', () => {
     });
     const previousKeyId = service
       .jwks()
-      .keys.find(({ kid }) => kid !== service.currentKeyId).kid;
+      .keys.find((key) => key.kid !== service.currentKeyId).kid;
 
     expect(service.getPublicKeyPem(service.currentKeyId)).toContain(
       'BEGIN PUBLIC KEY',
@@ -199,7 +199,7 @@ describe('SigningKeyService', () => {
       const resolver = new LocalKeyResolver(service);
       const previousKeyId = service
         .jwks()
-        .keys.find(({ kid }) => kid !== service.currentKeyId).kid;
+        .keys.find((key) => key.kid !== service.currentKeyId).kid;
 
       await expect(resolver.getPublicKey(previousKeyId)).resolves.toContain(
         'BEGIN PUBLIC KEY',

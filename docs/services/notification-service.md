@@ -145,7 +145,12 @@ sequenceDiagram
   otherwise the catalog's defaults apply.
 - **Failures:** auth-service or the database down → the error is rethrown and Kafka redelivers.
   Redis down → the row stays QUEUED and the sweep adds its job later. A message that can never
-  succeed (bad JSON, missing fields) is logged and skipped.
+  succeed is logged with the failing fields and skipped: bad JSON, or a payload that fails its
+  topic's DTO (`CONSUMED_EVENT_DTOS` in `kafka/kafka.constant.ts`, DTOs in
+  `modules/events/dto/`). The DTOs check what the handlers and templates need: ids, ISO dates
+  (`occurredAt`, a reset's `expiresAt`), the reset token, addresses, fares as numbers and the
+  ISO 4217 `currency`. Statuses, trip type and actor are checked as strings, not enums, so a
+  value trip-service adds first reaches the handler (which ignores it) instead of being dropped.
 - **Idempotency:** the unique `dedupeKey` makes a redelivered event insert nothing. Verified by
   rewinding the consumer group.
 

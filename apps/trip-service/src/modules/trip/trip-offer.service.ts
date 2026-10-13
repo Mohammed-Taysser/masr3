@@ -7,7 +7,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 
 import {
+  AuditActionEnum,
+  AuditEntityTypeEnum,
   AuthenticatedUser,
+  buildAuditChanges,
+  buildUserAuditActor,
   dayjs,
   TripActorEnum,
   TripStatusEnum,
@@ -15,10 +19,12 @@ import {
 } from '@masr3/libs';
 
 import { isUniqueViolation } from '../../shared/database/postgres-error';
+import AuditRecorderService from '../audit/audit-recorder.service';
 import TripOfferEntity from './entities/trip-offer.entity';
 import TripEntity from './entities/trip.entity';
 import {
   DRIVER_ACTIVE_TRIP_STATUSES,
+  TRIP_OFFER_AUDITED_FIELDS,
   UQ_TRIP_OFFERS_PENDING_DRIVER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from './trip.constant';
@@ -30,6 +36,7 @@ class TripOfferService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly tripService: TripService,
+    private readonly auditRecorder: AuditRecorderService,
     @InjectRepository(TripEntity)
     private readonly tripRepository: Repository<TripEntity>,
     @InjectRepository(TripOfferEntity)
@@ -73,7 +80,7 @@ class TripOfferService {
           throw new ConflictException('You already have an active trip');
         }
 
-        return manager.save(
+        const offer = await manager.save(
           manager.create(TripOfferEntity, {
             tripId,
             driverId: driver.id,
@@ -81,6 +88,16 @@ class TripOfferService {
             status: TripOfferStatusEnum.PENDING,
           }),
         );
+
+        await this.auditRecorder.record(manager, {
+          action: AuditActionEnum.SUBMITTED,
+          entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: offer.id },
+          actor: buildUserAuditActor(driver),
+          changes: buildAuditChanges(null, offer, TRIP_OFFER_AUDITED_FIELDS),
+          metadata: null,
+        });
+
+        return offer;
       });
     } catch (error) {
       if (isUniqueViolation(error, UQ_TRIP_OFFERS_PENDING_DRIVER)) {
@@ -158,22 +175,40 @@ class TripOfferService {
   ): Promise<TripOfferEntity> {
     const owned = { id: offerId, tripId, driverId: driver.id };
 
-    const { affected } = await this.offerRepository.update(
-      { ...owned, status: TripOfferStatusEnum.PENDING },
-      { status: TripOfferStatusEnum.WITHDRAWN },
-    );
-
-    if (!affected) {
-      const offer = await this.offerRepository.findOneBy(owned);
+    return this.dataSource.transaction(async (manager) => {
+      const offer = await manager.findOne(TripOfferEntity, {
+        where: owned,
+        lock: { mode: 'pessimistic_write' },
+      });
 
       if (!offer) {
         throw new NotFoundException(`Offer ${offerId} not found`);
       }
 
-      throw new ConflictException('The offer is no longer pending');
-    }
+      if (offer.status !== TripOfferStatusEnum.PENDING) {
+        throw new ConflictException('The offer is no longer pending');
+      }
 
-    return this.offerRepository.findOneByOrFail(owned);
+      await manager.update(
+        TripOfferEntity,
+        { id: offerId },
+        { status: TripOfferStatusEnum.WITHDRAWN },
+      );
+
+      const withdrawn = await manager.findOneByOrFail(TripOfferEntity, {
+        id: offerId,
+      });
+
+      await this.auditRecorder.record(manager, {
+        action: AuditActionEnum.WITHDRAWN,
+        entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: offerId },
+        actor: buildUserAuditActor(driver),
+        changes: buildAuditChanges(offer, withdrawn, TRIP_OFFER_AUDITED_FIELDS),
+        metadata: null,
+      });
+
+      return withdrawn;
+    });
   }
 }
 

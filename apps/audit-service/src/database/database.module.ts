@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import AuditLogEntity from '../modules/audit/entities/audit-log.entity';
+import AuditEntity from '../modules/audit/entities/audit.entity';
 
 @Module({
   imports: [
@@ -15,7 +15,7 @@ import AuditLogEntity from '../modules/audit/entities/audit-log.entity';
         username: configService.get<string>('POSTGRES_USER'),
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
-        entities: [AuditLogEntity],
+        entities: [AuditEntity],
         synchronize: false,
       }),
     }),

@@ -1,6 +1,12 @@
 import 'reflect-metadata';
 
-import { ROLES_KEY, UserRoleEnum } from '@masr3/libs';
+import {
+  AuditActor,
+  AuditActorTypeEnum,
+  AuthenticatedUser,
+  ROLES_KEY,
+  UserRoleEnum,
+} from '@masr3/libs';
 
 import CreateUserDto from '../dto/create-user.dto';
 import ListUsersQueryDto from '../dto/list-users-query.dto';
@@ -25,6 +31,19 @@ describe('UsersController', () => {
     tokenVersion: 0,
     isActive: true,
   } as UserEntity;
+
+  const admin: AuthenticatedUser = {
+    id: 99,
+    email: 'admin@example.com',
+    role: UserRoleEnum.ADMIN,
+    tokenVersion: 0,
+  };
+
+  const adminActor: AuditActor = {
+    type: AuditActorTypeEnum.USER,
+    id: admin.id,
+    role: admin.role,
+  };
 
   const createDto: CreateUserDto = {
     email: 'john@example.com',
@@ -134,9 +153,9 @@ describe('UsersController', () => {
     it('creates and returns the user', async () => {
       usersService.create.mockResolvedValue(user);
 
-      const response = await controller.create(createDto);
+      const response = await controller.create(createDto, admin);
 
-      expect(usersService.create).toHaveBeenCalledWith(createDto);
+      expect(usersService.create).toHaveBeenCalledWith(createDto, adminActor);
       expect(usersService.create).toHaveBeenCalledTimes(1);
       expect(response).toBe(user);
     });
@@ -144,7 +163,7 @@ describe('UsersController', () => {
     it('passes the dto without modifying it', async () => {
       usersService.create.mockResolvedValue(user);
 
-      await controller.create(createDto);
+      await controller.create(createDto, admin);
 
       const [dto] = usersService.create.mock.calls[0];
 
@@ -161,9 +180,13 @@ describe('UsersController', () => {
 
       usersService.update.mockResolvedValue(updatedUser);
 
-      const response = await controller.update(1, updateDto);
+      const response = await controller.update(1, updateDto, admin);
 
-      expect(usersService.update).toHaveBeenCalledWith(1, updateDto);
+      expect(usersService.update).toHaveBeenCalledWith(
+        1,
+        updateDto,
+        adminActor,
+      );
       expect(usersService.update).toHaveBeenCalledTimes(1);
       expect(response).toBe(updatedUser);
     });
@@ -171,9 +194,13 @@ describe('UsersController', () => {
     it('passes both id and dto to the service', async () => {
       usersService.update.mockResolvedValue(user);
 
-      await controller.update(42, updateDto);
+      await controller.update(42, updateDto, admin);
 
-      expect(usersService.update).toHaveBeenCalledWith(42, updateDto);
+      expect(usersService.update).toHaveBeenCalledWith(
+        42,
+        updateDto,
+        adminActor,
+      );
     });
   });
 
@@ -181,11 +208,12 @@ describe('UsersController', () => {
     it('sets the user active status', async () => {
       usersService.setActive.mockResolvedValue(undefined);
 
-      const response = await controller.updateStatus(1, updateStatusDto);
+      const response = await controller.updateStatus(1, updateStatusDto, admin);
 
       expect(usersService.setActive).toHaveBeenCalledWith(
         1,
         updateStatusDto.isActive,
+        adminActor,
       );
 
       expect(usersService.setActive).toHaveBeenCalledTimes(1);
@@ -199,15 +227,15 @@ describe('UsersController', () => {
         isActive: true,
       };
 
-      await controller.updateStatus(5, dto);
+      await controller.updateStatus(5, dto, admin);
 
-      expect(usersService.setActive).toHaveBeenCalledWith(5, true);
+      expect(usersService.setActive).toHaveBeenCalledWith(5, true, adminActor);
     });
 
     it('does not return the service result', async () => {
       usersService.setActive.mockResolvedValue(undefined);
 
-      const result = await controller.updateStatus(1, updateStatusDto);
+      const result = await controller.updateStatus(1, updateStatusDto, admin);
 
       expect(result).toBeUndefined();
     });
@@ -247,9 +275,9 @@ describe('UsersController', () => {
     it('removes and returns the user', async () => {
       usersService.remove.mockResolvedValue(user);
 
-      const response = await controller.remove(1);
+      const response = await controller.remove(1, admin);
 
-      expect(usersService.remove).toHaveBeenCalledWith(1);
+      expect(usersService.remove).toHaveBeenCalledWith(1, adminActor);
       expect(usersService.remove).toHaveBeenCalledTimes(1);
       expect(response).toBe(user);
     });
@@ -257,9 +285,9 @@ describe('UsersController', () => {
     it('passes the id directly to the service', async () => {
       usersService.remove.mockResolvedValue(user);
 
-      await controller.remove(99);
+      await controller.remove(99, admin);
 
-      expect(usersService.remove).toHaveBeenCalledWith(99);
+      expect(usersService.remove).toHaveBeenCalledWith(99, adminActor);
     });
   });
 });

@@ -63,6 +63,10 @@ class EnvironmentVariables {
   @MinLength(1)
   KAFKA_CLIENT_ID: string;
 
+  @IsString()
+  @MinLength(1)
+  KAFKA_CONSUMER_GROUP_ID: string;
+
   @IsUrl({ require_tld: false, require_protocol: true })
   @Matches(AUTH_SERVICE_URL_PATTERN)
   AUTH_SERVICE_URL: string;

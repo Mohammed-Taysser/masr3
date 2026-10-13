@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
 import UserEntity from '../modules/users/entities/user.entity';
 
 @Module({
@@ -15,7 +16,7 @@ import UserEntity from '../modules/users/entities/user.entity';
         username: configService.get<string>('POSTGRES_USER'),
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
-        entities: [UserEntity],
+        entities: [UserEntity, OutboxEventEntity],
         synchronize: false,
       }),
     }),

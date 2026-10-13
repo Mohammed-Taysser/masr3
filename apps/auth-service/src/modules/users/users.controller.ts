@@ -22,7 +22,13 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Roles, UserRoleEnum } from '@masr3/libs';
+import {
+  AuthenticatedUser,
+  buildUserAuditActor,
+  CurrentUser,
+  Roles,
+  UserRoleEnum,
+} from '@masr3/libs';
 
 import CreateUserDto from './dto/create-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';
@@ -82,8 +88,11 @@ class UsersController {
   @ApiCreatedResponse({
     description: 'User created successfully.',
   })
-  async create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  async create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.usersService.create(dto, buildUserAuditActor(admin));
   }
 
   @Patch(':id')
@@ -105,8 +114,9 @@ class UsersController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, buildUserAuditActor(admin));
   }
 
   @Patch(':id/status')
@@ -128,8 +138,13 @@ class UsersController {
   async updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserStatusDto,
+    @CurrentUser() admin: AuthenticatedUser,
   ): Promise<void> {
-    await this.usersService.setActive(id, dto.isActive);
+    await this.usersService.setActive(
+      id,
+      dto.isActive,
+      buildUserAuditActor(admin),
+    );
   }
 
   @Delete(':id')
@@ -148,8 +163,11 @@ class UsersController {
   @ApiOkResponse({
     description: 'User deleted successfully.',
   })
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.remove(id);
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.usersService.remove(id, buildUserAuditActor(admin));
   }
 }
 

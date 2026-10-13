@@ -182,8 +182,8 @@ describe('NotifierService', () => {
     expect(inserted).toEqual(expect.objectContaining({ recipientName: null }));
     expect(
       Object.values(deliveries()).every(
-        ({ skipReason }) =>
-          skipReason === DeliverySkipReasonEnum.RECIPIENT_NOT_FOUND,
+        (delivery) =>
+          delivery.skipReason === DeliverySkipReasonEnum.RECIPIENT_NOT_FOUND,
       ),
     ).toBe(true);
     expect(deliveryQueue.enqueue).not.toHaveBeenCalled();

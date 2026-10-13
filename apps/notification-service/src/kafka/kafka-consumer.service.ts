@@ -5,19 +5,22 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { plainToInstance } from 'class-transformer';
+import { validateSync, ValidationError } from 'class-validator';
 import { Consumer, EachMessagePayload, Kafka } from 'kafkajs';
 
 import {
   AuthEventMap,
   AuthKafkaTopic,
-  BaseKafkaEvent,
   TripEventMap,
   TripKafkaTopic,
 } from '@masr3/libs';
 
 import AuthEventsHandler from '../modules/events/auth-events.handler';
 import TripEventsHandler from '../modules/events/trip-events.handler';
+import KafkaEventDto from '../modules/events/dto/kafka-event.dto';
 import NotifierService from '../modules/notification/notifier.service';
+import { CONSUMED_EVENT_DTOS } from './kafka.constant';
 
 type ConsumedEventMap = AuthEventMap & TripEventMap;
 
@@ -107,18 +110,16 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * A message that can never succeed (unknown topic, bad JSON, missing fields) is
-   * logged and skipped, so it cannot block the partition behind it.
+   * A message that can never succeed (unknown topic, bad JSON, failing its
+   * topic's DTO in CONSUMED_EVENT_DTOS) is logged and skipped, so it cannot
+   * block the partition behind it.
    *
    * Anything else — the database being down — is rethrown on purpose: the
    * offset is not committed and kafkajs retries, instead of the event being
    * acknowledged and lost.
    */
-  private async handleMessage({
-    topic,
-    partition,
-    message,
-  }: EachMessagePayload) {
+  private async handleMessage(payload: EachMessagePayload) {
+    const topic = payload.topic;
     const handler = this.handlers[topic as keyof ConsumedEventMap];
 
     if (!handler) {
@@ -127,11 +128,14 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const event = KafkaConsumerService.parse(topic, message.value);
+    const event = KafkaConsumerService.parse(
+      topic as keyof ConsumedEventMap,
+      payload.message.value,
+    );
 
-    if (!event) {
+    if (typeof event === 'string') {
       this.logger.error(
-        `Skipping malformed message on ${topic}[${partition}] at offset ${message.offset}`,
+        `Skipping malformed message on ${topic}[${payload.partition}] at offset ${payload.message.offset}: ${event}`,
       );
 
       return;
@@ -140,35 +144,52 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     await handler(event as never);
   }
 
-  // Each topic names the fields its handler cannot do without.
+  // Returns the event validated against its topic's DTO, or why it can never
+  // be handled.
   private static parse(
-    topic: string,
+    topic: keyof ConsumedEventMap,
     value: Buffer | null,
-  ): BaseKafkaEvent | null {
+  ): KafkaEventDto | string {
     if (!value) {
-      return null;
+      return 'empty message';
     }
 
-    let event: Record<string, unknown>;
+    let raw: unknown;
 
     try {
-      event = JSON.parse(value.toString());
+      raw = JSON.parse(value.toString());
     } catch {
-      return null;
+      return 'invalid JSON';
     }
 
-    if (typeof event?.['eventId'] !== 'string') {
-      return null;
+    const isObject =
+      typeof raw === 'object' && raw !== null && !Array.isArray(raw);
+
+    if (!isObject) {
+      return 'not a JSON object';
     }
 
-    const isComplete =
-      topic === TripKafkaTopic.STATUS_CHANGED
-        ? Number.isInteger(event['tripId']) &&
-          Number.isInteger(event['customerId']) &&
-          typeof event['toStatus'] === 'string'
-        : typeof event['email'] === 'string';
+    const event = plainToInstance(CONSUMED_EVENT_DTOS[topic], raw);
+    const errors = validateSync(event);
 
-    return isComplete ? (event as unknown as BaseKafkaEvent) : null;
+    return errors.length > 0
+      ? KafkaConsumerService.describe(errors).join('; ')
+      : event;
+  }
+
+  // Flattens nested errors into "driverId: driverId must be an integer number".
+  private static describe(errors: ValidationError[], path = ''): string[] {
+    return errors.flatMap((error) => {
+      const property = `${path}${error.property}`;
+      const messages = Object.values(error.constraints ?? {}).map(
+        (message) => `${property}: ${message}`,
+      );
+
+      return [
+        ...messages,
+        ...KafkaConsumerService.describe(error.children ?? [], `${property}.`),
+      ];
+    });
   }
 }
 

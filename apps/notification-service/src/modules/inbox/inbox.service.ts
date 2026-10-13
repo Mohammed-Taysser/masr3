@@ -18,20 +18,16 @@ class InboxService {
 
   async list(
     userId: number,
-    { unread, category, page, limit }: ListInboxQueryDto,
+    query: ListInboxQueryDto,
   ): Promise<Paginated<NotificationEntity>> {
     const [items, total] = await this.notificationRepository.findAndCount({
-      where: {
-        ...InboxService.inboxOf(userId),
-        ...(unread && { readAt: IsNull() }),
-        ...(category && { category }),
-      },
+      where: InboxService.prepareListWhere(userId, query),
       order: { inboxAt: 'DESC', id: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
     });
 
-    return paginate(items, total, page, limit);
+    return paginate(items, total, query.page, query.limit);
   }
 
   async unreadCount(userId: number): Promise<number> {
@@ -95,6 +91,17 @@ class InboxService {
     }
 
     return item;
+  }
+
+  private static prepareListWhere(
+    userId: number,
+    query: ListInboxQueryDto,
+  ): FindOptionsWhere<NotificationEntity> {
+    return {
+      ...InboxService.inboxOf(userId),
+      ...(query.unread && { readAt: IsNull() }),
+      ...(query.category && { category: query.category }),
+    };
   }
 
   private static inboxOf(userId: number): FindOptionsWhere<NotificationEntity> {

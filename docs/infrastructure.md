@@ -12,6 +12,7 @@ flowchart TB
     auth[auth-service :7000]
     notification[notification-service :7001]
     trip[trip-service :7002]
+    audit[audit-service :7003]
   end
 
   subgraph docker[Docker network masr3-network]
@@ -19,6 +20,7 @@ flowchart TB
     authdb[(auth-db :41000)]
     notificationdb[(notification-db :41001)]
     tripdb[(trip-db :41002)]
+    auditdb[(audit-db :41003)]
     kafka[Kafka KRaft :42000]
     kafkaui[kafka-ui :42001]
     redis[(Redis :44000)]
@@ -27,17 +29,19 @@ flowchart TB
     mailhog[Mailhog SMTP :45000, UI :45001]
   end
 
-  auth & notification & trip --> pgbouncer
-  pgbouncer --> authdb & notificationdb & tripdb
+  auth & notification & trip & audit --> pgbouncer
+  pgbouncer --> authdb & notificationdb & tripdb & auditdb
   auth -->|produce| kafka
   trip -->|produce| kafka
   notification -->|consume| kafka
+  audit -->|consume| kafka
+  auth -->|BullMQ| redis
   trip -->|BullMQ| redis
   notification -->|BullMQ| redis
   notification -->|SMTP| mailhog
   kafkaui --> kafka
   bullboard --> redis
-  pgadmin --> authdb & notificationdb & tripdb
+  pgadmin --> authdb & notificationdb & tripdb & auditdb
 ```
 
 Apps reach every container through its **host-published** port (`localhost:41500`,
@@ -50,19 +54,20 @@ Compose keys are plain names (`docker compose logs auth-db`); each `container_na
 `masr3-` (`masr3-auth-db`). Host ports are grouped in bands; container ports keep each image's
 default.
 
-| Band  | Category       | Assigned                                                  |
-| ----- | -------------- | --------------------------------------------------------- |
-| 41000 | Databases      | `auth-db`=41000, `notification-db`=41001, `trip-db`=41002 |
-| 41500 | pgbouncer      | `pgbouncer`=41500                                         |
-| 42000 | Messaging      | `kafka` (host listener)=42000, `kafka-ui`=42001           |
-| 43000 | DB / infra UI  | `pgadmin`=43000                                           |
-| 44000 | Queues         | `redis`=44000, `bull-board`=44001                         |
-| 45000 | Dev-only tools | `mailhog` SMTP=45000, web UI=45001                        |
+| Band  | Category       | Assigned                                                                    |
+| ----- | -------------- | --------------------------------------------------------------------------- |
+| 41000 | Databases      | `auth-db`=41000, `notification-db`=41001, `trip-db`=41002, `audit-db`=41003 |
+| 41500 | pgbouncer      | `pgbouncer`=41500                                                           |
+| 42000 | Messaging      | `kafka` (host listener)=42000, `kafka-ui`=42001                             |
+| 43000 | DB / infra UI  | `pgadmin`=43000                                                             |
+| 44000 | Queues         | `redis`=44000, `bull-board`=44001                                           |
+| 45000 | Dev-only tools | `mailhog` SMTP=45000, web UI=45001                                          |
 
 - A UI sits next to the thing it shows: kafka 42000 → kafka-ui 42001, redis 44000 → bull-board 44001.
-- Databases are numbered in the order they were added; the next service takes 41003.
-- Apps: auth-service 7000, notification-service 7001, trip-service 7002. Node inspectors: 9229,
-  9230, 9231 (each serve target's `port`; attach with `.vscode/launch.json`).
+- Databases are numbered in the order they were added; the next service takes 41004.
+- Apps: auth-service 7000, notification-service 7001, trip-service 7002, audit-service 7003.
+  Node inspectors: 9229, 9230, 9231, 9232 (each serve target's `port`; attach with
+  `.vscode/launch.json`). The next service takes 7004 and 9233.
 
 ## Postgres through pgbouncer
 
@@ -72,6 +77,7 @@ flowchart LR
   pgb -->|"auth_db = host=masr3-auth-db"| a[(auth-db)]
   pgb -->|notification_db| n[(notification-db)]
   pgb -->|trip_db| t[(trip-db)]
+  pgb -->|audit_db| au[(audit-db)]
 ```
 
 - One Postgres 16 per service; services never share a database.
@@ -97,8 +103,10 @@ bridge, not for anything shared).
 A client reconnects to the address the broker **advertises**, which is why there are two.
 
 - **Topics are created explicitly.** Auto-create is off on the broker and on every client, so a
-  typo fails instead of creating a topic nobody reads. Each producing service has a
-  `kafka:create-topics` target (idempotent) whose list must match its topic enum in `libs`.
+  typo fails instead of creating a topic nobody reads. Each service that owns topics has a
+  `kafka:create-topics` target (idempotent) whose list must match its topic enum in `libs`:
+  auth-service (`auth.*`), trip-service (`trip.status-changed`) and audit-service
+  (`audit.action-recorded`, which several services produce to).
 - `auth.password-reset-requested` keeps messages for one hour: it carries a raw reset token.
 - Inspect: `docker exec masr3-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`,
   or kafka-ui at `http://localhost:42001`.
@@ -109,7 +117,14 @@ flowchart LR
   at -->|group notification-service| ns[notification-service]
   trip[trip-service] -->|transactional outbox| tt{{trip.status-changed}}
   tt -->|same group, from the latest offset| ns
+  auth -->|transactional outbox| aa{{audit.action-recorded}}
+  trip -->|transactional outbox| aa
+  aa -->|group audit-service, from the beginning| as[audit-service]
 ```
+
+- **One consumer group per consuming service** (`KAFKA_CONSUMER_GROUP_ID`): notification-service
+  and audit-service each get every message of the topics they read. Instances of one service
+  share its group and split the partitions.
 
 ## Redis and BullMQ
 
@@ -118,7 +133,10 @@ BullMQ needs: jobs survive a restart and are never evicted.
 
 - **Job schedulers** do repeating work: one scheduler id per job, upserted on every boot, so
   several instances still share one schedule (trip-service: `OUTBOX-RELAY`,
-  `TRIP-EXPIRY-SWEEP`; notification-service: `NOTIFICATION-DELIVERY-SWEEP`).
+  `TRIP-EXPIRY-SWEEP`; auth-service: `AUTH-OUTBOX-RELAY`; notification-service:
+  `NOTIFICATION-DELIVERY-SWEEP`).
+- **Queue names are global.** Every service uses this one Redis with BullMQ's default prefix,
+  so two services must never share a queue name: the other service's worker would take the jobs.
 - **Delayed jobs** do work at a moment: a stable `jobId` (`trip-<id>`), queued after the
   transaction commits (trip-service: `EXPIRE_TRIP`).
 - **Work queues with retries:** notification-service queues one job per delivery on
@@ -179,5 +197,3 @@ apps/<svc>/.env             the app's settings, gitignored (copy .env.example)
   pgbouncer, `redis-cli ping`. Each app's `GET /api/health` is public on purpose: a probe that
   needs a token is a restart loop.
 - **No monitoring yet:** no `/metrics`, no tracing.
-- `apps/auth-service/Dockerfile` still builds a deployable image; it is not part of the local
-  stack.

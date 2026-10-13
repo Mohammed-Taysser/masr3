@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
-import AuditLogEntity from '../modules/audit/entities/audit-log.entity';
+import AuditEntity from '../modules/audit/entities/audit.entity';
 
 dotenv.config({
   path: path.join(process.cwd(), 'apps/audit-service/.env'),
@@ -18,7 +18,7 @@ const dataSource = new DataSource({
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
-  entities: [AuditLogEntity],
+  entities: [AuditEntity],
   migrations: [path.join(__dirname, 'migrations/*.ts')],
   synchronize: false,
 });

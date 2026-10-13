@@ -1,7 +1,13 @@
 import { ConfigService } from '@nestjs/config';
 import { EachMessagePayload } from 'kafkajs';
 
-import { AuthKafkaTopic, TripKafkaTopic, TripStatusEnum } from '@masr3/libs';
+import {
+  AuthKafkaTopic,
+  TripActorEnum,
+  TripKafkaTopic,
+  TripStatusEnum,
+  TripTypeEnum,
+} from '@masr3/libs';
 
 import AuthEventsHandler from '../../modules/events/auth-events.handler';
 import TripEventsHandler from '../../modules/events/trip-events.handler';
@@ -33,13 +39,29 @@ describe('KafkaConsumerService', () => {
     firstName: 'Demo',
   };
 
+  const resetEvent = {
+    ...event,
+    resetToken: 'raw-reset-token',
+    expiresAt: '2026-10-01T12:10:00.000Z',
+  };
+
   const tripEvent = {
     eventId: 'event-2',
     occurredAt: '2026-10-01T12:00:00.000Z',
     tripId: 7,
+    type: TripTypeEnum.RIDE,
     customerId: 1,
     driverId: 2,
+    fromStatus: TripStatusEnum.REQUESTED,
     toStatus: TripStatusEnum.ACCEPTED,
+    actor: TripActorEnum.CUSTOMER,
+    actorId: 1,
+    reason: null,
+    pickupAddress: 'Tahrir Square',
+    dropoffAddress: 'Zamalek',
+    proposedFare: 85,
+    agreedFare: 95,
+    currency: 'EGP',
   };
 
   const payload = (topic: string, value: unknown): EachMessagePayload =>
@@ -111,7 +133,12 @@ describe('KafkaConsumerService', () => {
     ] as const)(
       'routes %s to %s and notifies its intents',
       async (topic, handler) => {
-        await handle(topic, event);
+        await handle(
+          topic,
+          topic === AuthKafkaTopic.PASSWORD_RESET_REQUESTED
+            ? resetEvent
+            : event,
+        );
 
         expect(authEvents[handler]).toHaveBeenCalled();
         expect(notifier.notify).toHaveBeenCalledWith(
@@ -123,7 +150,9 @@ describe('KafkaConsumerService', () => {
     it('routes trip.status-changed to the trip handler, then the notifier', async () => {
       await handle(TripKafkaTopic.STATUS_CHANGED, tripEvent);
 
-      expect(tripEvents.handleStatusChanged).toHaveBeenCalledWith(tripEvent);
+      expect(tripEvents.handleStatusChanged).toHaveBeenCalledWith(
+        expect.objectContaining(tripEvent),
+      );
       expect(notifier.notify).toHaveBeenCalledWith(intents);
     });
   });
@@ -157,6 +186,9 @@ describe('KafkaConsumerService', () => {
       ['invalid JSON', '{not json'],
       ['a payload without eventId', { email: 'demo@example.com' }],
       ['a payload without email', { eventId: 'event-1' }],
+      ['a JSON array', [event]],
+      ['an occurredAt that is not a date', { ...event, occurredAt: 'today' }],
+      ['a non-integer userId', { ...event, userId: '1' }],
     ])('skips %s', async (_label, value) => {
       await expect(
         handle(AuthKafkaTopic.USER_REGISTER, value),
@@ -174,6 +206,53 @@ describe('KafkaConsumerService', () => {
       await handle(TripKafkaTopic.STATUS_CHANGED, value);
 
       expect(tripEvents.handleStatusChanged).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['without a reset token', { ...resetEvent, resetToken: undefined }],
+      ['with an unparsable expiry', { ...resetEvent, expiresAt: 'soon' }],
+    ])('skips a reset request %s', async (_label, value) => {
+      await handle(AuthKafkaTopic.PASSWORD_RESET_REQUESTED, value);
+
+      expect(authEvents.handlePasswordResetRequested).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['without addresses', { ...tripEvent, pickupAddress: undefined }],
+      [
+        'with a fare that is not a number',
+        { ...tripEvent, proposedFare: '85' },
+      ],
+      ['without a currency', { ...tripEvent, currency: undefined }],
+      ['with an invalid currency', { ...tripEvent, currency: 'EGYPT' }],
+    ])('skips a trip event %s', async (_label, value) => {
+      await handle(TripKafkaTopic.STATUS_CHANGED, value);
+
+      expect(tripEvents.handleStatusChanged).not.toHaveBeenCalled();
+    });
+
+    // trip-service may add a status before this service is redeployed: the
+    // handler ignores it rather than the consumer dropping it as malformed.
+    it('passes a status it does not know yet to the handler', async () => {
+      await handle(TripKafkaTopic.STATUS_CHANGED, {
+        ...tripEvent,
+        toStatus: 'PAUSED',
+      });
+
+      expect(tripEvents.handleStatusChanged).toHaveBeenCalled();
+    });
+
+    it('logs which field made a message unusable', async () => {
+      const logger = (service as unknown as { logger: { error: jest.Mock } })
+        .logger;
+      const error = jest.spyOn(logger, 'error').mockImplementation();
+
+      await handle(TripKafkaTopic.STATUS_CHANGED, {
+        ...tripEvent,
+        currency: undefined,
+      });
+
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('currency:'));
     });
 
     it('skips an unknown topic', async () => {

@@ -35,17 +35,22 @@ const cases = statuses.flatMap((from) =>
 );
 
 describe('assertTransitionAllowed', () => {
-  describe.each(cases)('$from → $to by $actor', ({ from, to, actor }) => {
-    const allowedActors = TRIP_TRANSITIONS[from][to];
+  describe.each(cases)('$from → $to by $actor', (move) => {
+    const allowedActors = TRIP_TRANSITIONS[move.from][move.to];
 
     const run = () =>
-      assertTransitionAllowed(tripIn(from), to, actor, actorIds[actor]);
+      assertTransitionAllowed(
+        tripIn(move.from),
+        move.to,
+        move.actor,
+        actorIds[move.actor],
+      );
 
     if (!allowedActors) {
       it('is a conflict', () => {
         expect(run).toThrow(ConflictException);
       });
-    } else if (allowedActors.includes(actor)) {
+    } else if (allowedActors.includes(move.actor)) {
       it('is allowed', () => {
         expect(run).not.toThrow();
       });

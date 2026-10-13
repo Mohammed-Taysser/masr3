@@ -6,8 +6,8 @@ wherever the app is localized into Arabic.
 masr3 is an inDrive-style platform that moves people (rides) and things (parcels): a customer
 proposes a fare, drivers accept it or counter-offer, and the customer picks one offer.
 
-It is an Nx monorepo of **three NestJS services** (`auth-service`, `notification-service` and
-`trip-service`) plus a shared `libs` project. **Docker runs only the infrastructure**: one
+It is an Nx monorepo of **four NestJS services** (`auth-service`, `notification-service`,
+`trip-service` and `audit-service`) plus a shared `libs` project. **Docker runs only the infrastructure**: one
 Postgres per service behind pgbouncer, Kafka with kafka-ui, Redis with bull-board, pgAdmin and
 Mailhog. The services run on the host through Nx. Package manager: **pnpm**.
 
@@ -27,10 +27,12 @@ flowchart LR
     auth[auth-service :7000<br/>users, tokens]
     trip[trip-service :7002<br/>trips, offers]
     notification[notification-service :7001<br/>emails]
+    audit[audit-service :7003<br/>audit trail]
   end
 
   customer & driver & admin -->|HTTP| auth
   customer & driver & admin -->|HTTP + access token| trip
+  admin -->|HTTP + access token| audit
 
   trip -.->|verify tokens with JWKS| auth
   notification -->|service token: user contact| auth
@@ -38,11 +40,15 @@ flowchart LR
   auth -->|auth.* events| kafka{{Kafka}}
   trip -->|trip.status-changed, outbox| kafka
   kafka -->|auth.* and trip events| notification
+  auth & trip -->|audit.action-recorded, outbox| kafka
+  kafka -->|audit events| audit
 
   auth --- authdb[(auth-db)]
   trip --- tripdb[(trip-db)]
   notification --- notificationdb[(notification-db)]
+  audit --- auditdb[(audit-db)]
   trip --- redis[(Redis, BullMQ)]
+  auth --- redis
   notification --- redis
   notification -->|SMTP| mail[Mailhog]
 ```
@@ -55,6 +61,9 @@ flowchart LR
   HTTP call is notification-service reading a user's contact.
 - **State changes travel as Kafka events.** trip-service publishes through a transactional
   outbox, so an event is never lost or invented.
+- **Every change is audited.** auth-service and trip-service write an audit event, with a
+  before/after diff, into their outbox in the same transaction as the change; audit-service
+  stores it once and serves it to admins.
 
 ## Services
 
@@ -63,6 +72,7 @@ flowchart LR
 | [auth-service](docs/services/auth-service.md)                 | 7000 | users, passwords, every token, signing keys |
 | [trip-service](docs/services/trip-service.md)                 | 7002 | trips, status history, offers, trip events  |
 | [notification-service](docs/services/notification-service.md) | 7001 | templates, delivery, the notifications log  |
+| [audit-service](docs/services/audit-service.md)               | 7003 | the audit trail of every service            |
 
 Each service doc has its data model, its flows as diagrams, its events and a **Planned** section.
 
@@ -89,6 +99,7 @@ docker compose up -d                                              # infrastructu
 cp apps/auth-service/.env.example apps/auth-service/.env          # if missing
 cp apps/notification-service/.env.example apps/notification-service/.env
 cp apps/trip-service/.env.example apps/trip-service/.env
+cp apps/audit-service/.env.example apps/audit-service/.env
 
 npx nx run auth-service:generate-signing-key --name=jwt           # RS256 signing key (once)
 openssl rand -hex 32                                              # client secret: set it as
@@ -97,6 +108,7 @@ openssl rand -hex 32                                              # client secre
 npx nx run-many -t migrate                                        # schema for every service
 npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
 npx nx run trip-service:kafka:create-topics
+npx nx run audit-service:kafka:create-topics
 
 npx nx run-many -t serve                                          # run all on the host
 ```
@@ -115,6 +127,7 @@ Useful individual targets:
 | `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                    |
 | `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                         |
 | `npx nx run trip-service:kafka:create-topics`           | Create `trip.status-changed`, idempotently                                   |
+| `npx nx run audit-service:kafka:create-topics`          | Create `audit.action-recorded`, idempotently                                 |
 | `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites) |
 | `npx nx run notification-service:preview-templates`     | Render every notification on each channel to `dist/notification-previews/`   |
 
@@ -125,6 +138,7 @@ Useful individual targets:
 | `auth-service`         | 7000 | 41000    | 9229      |
 | `notification-service` | 7001 | 41001    | 9230      |
 | `trip-service`         | 7002 | 41002    | 9231      |
+| `audit-service`        | 7003 | 41003    | 9232      |
 
 pgbouncer 41500, Kafka 42000 (kafka-ui 42001), pgAdmin 43000, Redis 44000 (bull-board 44001),
 Mailhog SMTP 45000 (web UI 45001). The full map and the naming rules are in
@@ -213,7 +227,7 @@ The services never run as containers. Run one with `npx nx serve auth-service`, 
 `npx nx run-many -t serve`. Each `.env` points at host-published ports (pgbouncer
 `localhost:41500`, Kafka `localhost:42000`), so it works whether one service runs or all.
 
-Every `nx serve` also opens a Node inspector on the service's own port (9229–9231). Keep it
+Every `nx serve` also opens a Node inspector on the service's own port (9229–9232). Keep it
 running and start an **Attach …** configuration from `.vscode/launch.json`, or **Attach all
 services**; they reattach after each rebuild.
 
@@ -237,6 +251,11 @@ for step in arrived start complete; do
   curl -s -X POST $T/trips/$TRIP/$step -H "Authorization: Bearer $D" | jq .status
 done
 curl -s $T/trips/$TRIP/history -H "Authorization: Bearer $C" | jq '.[].toStatus'
+
+# The same trip in the audit trail (needs an ADMIN token)
+AD=$(tok admin@masr3.local)
+curl -s "http://localhost:7003/api/admin/audits?entityType=TRIP&entityId=$TRIP" \
+  -H "Authorization: Bearer $AD" | jq '.items[] | {action, actorRole, changes}'
 ```
 
 Accepting and completing the trip send emails (cancelling and expiring do too); read them in
@@ -251,6 +270,7 @@ To look at every email without sending one:
 | `auth-service`         | `http://localhost:7000/api/docs` | `.../api/docs-json` |
 | `notification-service` | `http://localhost:7001/api/docs` | `.../api/docs-json` |
 | `trip-service`         | `http://localhost:7002/api/docs` | `.../api/docs-json` |
+| `audit-service`        | `http://localhost:7003/api/docs` | `.../api/docs-json` |
 
 auth-service's Swagger groups the service-only routes (`/service-tokens`, `/internal/...`) under the
 `internal` tag; use **Authorize** with `bearer` for user and service tokens, `basic` for client

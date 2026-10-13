@@ -20,14 +20,14 @@ class DeliveryResponseDto {
 
   @Expose()
   @Transform(
-    ({ obj }) => (obj as NotificationDeliveryEntity).notification?.type,
+    (params) => (params.obj as NotificationDeliveryEntity).notification?.type,
   )
   @ApiProperty({ enum: NotificationTypeEnum })
   type: NotificationTypeEnum;
 
   @Expose()
   @Transform(
-    ({ obj }) => (obj as NotificationDeliveryEntity).notification?.userId,
+    (params) => (params.obj as NotificationDeliveryEntity).notification?.userId,
   )
   @ApiProperty({ example: 2 })
   userId: number;

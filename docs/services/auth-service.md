@@ -5,7 +5,7 @@ RS256 tokens locally against its public keys (JWKS).
 
 - **Port** 7000, database `auth-db` (41000), Swagger at `http://localhost:7000/api/docs`.
 - **Owns:** users (roles CUSTOMER, DRIVER, ADMIN), passwords, access / refresh / service tokens,
-  signing keys, and the service-client registry.
+  signing keys, the service-client registry, and the outbox of its audit events.
 - **Does not own:** sending email. It publishes `auth.*` events and notification-service sends.
 
 Token types, claims, scopes, rotation and failure behaviour are covered in depth in
@@ -20,6 +20,9 @@ flowchart LR
   auth -->|via pgbouncer :41500| db[(auth-db)]
   auth -->|best-effort publish| topics{{auth.* topics}}
   topics --> notification[notification-service]
+  auth -->|BullMQ AUTH-OUTBOX-RELAY| redis[(Redis :44000)]
+  auth -->|outbox relay| audit{{audit.action-recorded}}
+  audit --> auditService[audit-service]
   notification -->|service token: /internal/users/:id/contact| auth
   notification -->|POST /service-tokens, Basic secret| auth
   trip[trip-service] -->|GET /.well-known/jwks.json, cached| auth
@@ -42,6 +45,16 @@ erDiagram
     string passwordResetTokenHash "select false"
     timestamptz passwordResetExpiresAt "select false"
   }
+  outbox_events {
+    int id PK
+    uuid eventId UK
+    string topic "audit.action-recorded"
+    string key "USER-id"
+    jsonb payload
+    int attempts
+    string lastError
+    timestamptz publishedAt "null while pending"
+  }
 ```
 
 - Signing keys are files, not rows: `apps/auth-service/secrets/<name>.{private,public}.pem`,
@@ -61,11 +74,13 @@ sequenceDiagram
   participant K as Kafka
   U->>A: POST /auth/register
   A->>DB: email taken? (409 if so)
-  A->>DB: INSERT users (bcrypt password)
+  A->>DB: BEGIN, INSERT users (bcrypt password)
+  A->>DB: INSERT outbox_events (audit USER REGISTERED), COMMIT
   A-)K: auth.user-register (best effort)
   A-->>U: accessToken, refreshToken, user
   U->>A: POST /auth/login
   A->>DB: find user, check isActive and password
+  A->>DB: INSERT outbox_events (audit USER LOGGED_IN)
   A-)K: auth.user-logged-in (best effort)
   A-->>U: accessToken (5 min), refreshToken (7 days)
 ```
@@ -119,6 +134,43 @@ sequenceDiagram
 
 Only the token's hash is stored. notification-service stores the email with the token masked.
 
+### Audit events (transactional outbox)
+
+```mermaid
+sequenceDiagram
+  participant S as UsersService
+  participant UA as AuditRecorderService
+  participant DB as auth-db
+  participant R as OutboxRelayService
+  participant K as Kafka audit.action-recorded
+  S->>DB: BEGIN
+  S->>DB: SELECT user FOR UPDATE (before)
+  S->>DB: UPDATE users
+  S->>DB: SELECT user (after)
+  S->>S: changes = buildAuditChanges(before, after, USER_AUDITED_FIELDS)
+  S->>UA: record(manager, { action, entity, actor, changes, metadata })
+  UA->>DB: INSERT outbox_events (audit envelope)
+  S->>DB: COMMIT
+  R->>DB: every OUTBOX_POLL_INTERVAL_MS, pending rows
+  R->>K: send batch keyed USER-id, then SET publishedAt
+```
+
+- Every user write in `UsersService` goes through `writeAudited` (or `insert` for a new user),
+  so the audit row exists exactly when the change does. Read-only login writes only the outbox
+  row.
+- `modules/audit/` holds `AuditRecorderService`, the service's one way to produce an audit
+  event: it adds `schemaVersion`, `SERVICE_NAME` and the key, then enqueues into the outbox.
+  The feature (here `UsersService`) owns the allow-list and the diff.
+- `changes` is `buildAuditChanges(before, after, USER_AUDITED_FIELDS)`: email, names, role,
+  isActive and tokenVersion. **The password, its hash and the reset token never reach the
+  audit trail**, because they are not in the allow-list.
+- Actors: the signed-in user (`buildUserAuditActor`), the admin on `/users` routes
+  (`@CurrentUser()`), or `ANONYMOUS_AUDIT_ACTOR` for forgot-password.
+- The relay is a copy of trip-service's with its own names: queue `AUTH-OUTBOX-RELAY`,
+  scheduler `AUTH-OUTBOX-RELAY-EVERY-INTERVAL`, advisory lock `7000001`. Redis is shared, so
+  a queue named `OUTBOX-RELAY` would collide with trip-service's. See
+  [the outbox pattern](../patterns/transactional-outbox.md).
+
 ### Service-to-service calls
 
 ```mermaid
@@ -167,8 +219,16 @@ All published best-effort, keyed by `userId`. Contracts: `AuthEventMap` in
 | `auth.password-reset-requested` | `forgetPassword()` | the reset email                |
 | `auth.password-reset-completed` | `resetPassword()`  | "your password has been reset" |
 
+**Audit events** go to `audit.action-recorded` through the outbox, keyed `USER-<id>`, consumed
+by [audit-service](audit-service.md), all with `entityType` `USER`: `REGISTERED`,
+`LOGGED_IN`, `LOGGED_OUT`, `PASSWORD_CHANGED`, `PASSWORD_RESET_REQUESTED`,
+`PASSWORD_RESET_COMPLETED`, and the admin actions `CREATED`, `UPDATED`, `STATUS_CHANGED`,
+`DELETED`.
+
 ## Planned
 
-- **A transactional outbox for `auth.*`**, like trip-service's, so a Kafka outage can no longer
-  lose a password-reset email.
+- **Move `auth.*` onto the outbox.** The outbox exists now (for audit events); routing the
+  domain events through it too would stop a Kafka outage from losing a password-reset email.
+- **Admin-created users** (`POST /users`) are saved with the password as given: it is not
+  hashed, so such a user cannot log in. Hash it like `register` does.
 - **Driver profiles and vehicles** may live here or in a new service; undecided.

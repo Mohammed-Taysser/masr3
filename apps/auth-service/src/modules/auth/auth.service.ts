@@ -7,6 +7,7 @@ import {
   AuthKafkaTopic,
   BaseAuthEvent,
   BEARER_TOKEN_TYPE,
+  buildUserAuditActor,
   EventPayload,
   REFRESH_TOKEN_AUDIENCE,
   TokenUseEnum,
@@ -47,7 +48,7 @@ class AuthService {
 
     const hashedPassword = await this.passwordService.hash(dto.password);
 
-    const user = await this.usersService.create({
+    const user = await this.usersService.register({
       ...dto,
       password: hashedPassword,
     });
@@ -83,6 +84,8 @@ class AuthService {
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
     }
+
+    await this.usersService.recordLogin(user);
 
     await this.kafkaProducer.publish(
       AuthKafkaTopic.USER_LOGGED_IN,
@@ -122,7 +125,11 @@ class AuthService {
 
     const hashedPassword = await this.passwordService.hash(dto.newPassword);
 
-    await this.usersService.resetPassword(user.id, hashedPassword);
+    await this.usersService.resetPassword(
+      user.id,
+      hashedPassword,
+      buildUserAuditActor(user),
+    );
 
     await this.kafkaProducer.publish(
       AuthKafkaTopic.PASSWORD_RESET_COMPLETED,
@@ -179,7 +186,11 @@ class AuthService {
 
     const hashedPassword = await this.passwordService.hash(dto.newPassword);
 
-    await this.usersService.changePassword(user.id, hashedPassword);
+    await this.usersService.changePassword(
+      user.id,
+      hashedPassword,
+      buildUserAuditActor(user),
+    );
 
     await this.kafkaProducer.publish(
       AuthKafkaTopic.USER_CHANGE_PASSWORD,
@@ -198,7 +209,7 @@ class AuthService {
   async logout(userId: number) {
     const user = await this.usersService.findByIdOrFail(userId);
 
-    await this.usersService.incrementTokenVersion(userId);
+    await this.usersService.logout(userId, buildUserAuditActor(user));
 
     await this.kafkaProducer.publish(
       AuthKafkaTopic.USER_LOGGED_OUT,

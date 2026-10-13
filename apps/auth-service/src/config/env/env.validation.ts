@@ -115,6 +115,27 @@ class EnvironmentVariables {
   @IsString()
   @MinLength(1)
   KAFKA_CLIENT_ID: string;
+
+  @IsString()
+  @MinLength(1)
+  REDIS_HOST: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  REDIS_PORT: number;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_POLL_INTERVAL_MS: number;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_BATCH_SIZE: number;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_RETENTION_MS: number;
 }
 
 function validate(config: Record<string, unknown>): EnvironmentVariables {

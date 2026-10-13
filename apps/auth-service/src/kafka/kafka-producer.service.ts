@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Kafka, Producer } from 'kafkajs';
+import { Kafka, Producer, TopicMessages } from 'kafkajs';
 
 import { AuthEventMap, createKafkaEvent, EventPayload } from '@masr3/libs';
 
@@ -22,7 +22,13 @@ class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
 
     // Topics are created by kafka-create-topics.sh; a typo'd name should
     // fail loudly rather than quietly create a topic nobody consumes.
-    this.producer = kafka.producer({ allowAutoTopicCreation: false });
+    // Idempotent with one request in flight: a retried outbox send cannot
+    // reorder or duplicate messages within a partition.
+    this.producer = kafka.producer({
+      allowAutoTopicCreation: false,
+      idempotent: true,
+      maxInFlightRequests: 1,
+    });
   }
 
   async onModuleInit() {
@@ -51,6 +57,12 @@ class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
         `Failed to publish ${topic} (${event.eventId}): ${(error as Error).message}`,
       );
     }
+  }
+
+  // Used by the outbox relay. Errors are thrown, not swallowed: the relay keeps
+  // unsent rows pending.
+  async sendBatch(topicMessages: TopicMessages[]): Promise<void> {
+    await this.producer.sendBatch({ topicMessages });
   }
 }
 

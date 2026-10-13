@@ -133,10 +133,10 @@ function write(
 function renderIndex(previews: Preview[]): string {
   const rows = previews
     .map(
-      ({ type, channel, files, summary }) => `      <li>
-        <strong>${type}</strong> <span class="channel">${channel}</span>
-        <span class="subject">${escapeHtml(summary)}</span>
-        <span class="links">${files.map((file) => `<a href="${file}">${path.extname(file).slice(1)}</a>`).join(' · ')}</span>
+      (preview) => `      <li>
+        <strong>${preview.type}</strong> <span class="channel">${preview.channel}</span>
+        <span class="subject">${escapeHtml(preview.summary)}</span>
+        <span class="links">${preview.files.map((file) => `<a href="${file}">${path.extname(file).slice(1)}</a>`).join(' · ')}</span>
       </li>`,
     )
     .join('\n');

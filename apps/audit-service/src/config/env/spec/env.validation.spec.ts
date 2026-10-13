@@ -3,7 +3,7 @@ import validate from '../env.validation';
 const validEnv = {
   NODE_ENV: 'development',
 
-  PORT: '7002',
+  PORT: '7003',
 
   SERVICE_NAME: 'audit-service',
 
@@ -16,6 +16,7 @@ const validEnv = {
 
   KAFKA_BROKER: 'localhost:42000',
   KAFKA_CLIENT_ID: 'audit-service',
+  KAFKA_CONSUMER_GROUP_ID: 'audit-service',
 
   AUTH_SERVICE_URL: 'http://localhost:7000/api',
 };
@@ -26,9 +27,10 @@ describe('validate', () => {
       const result = validate(validEnv);
 
       expect(result.NODE_ENV).toBe('development');
-      expect(result.PORT).toBe(7002);
+      expect(result.PORT).toBe(7003);
       expect(result.DATABASE_PORT).toBe(41500);
       expect(result.POSTGRES_DB).toBe('audit_db');
+      expect(result.KAFKA_CONSUMER_GROUP_ID).toBe('audit-service');
     });
 
     it.each(['development', 'production', 'test'])(
@@ -49,7 +51,7 @@ describe('validate', () => {
     });
   });
 
-  describe.each(['PORT', 'REDIS_PORT'])('%s', (property) => {
+  describe.each(['PORT', 'DATABASE_PORT'])('%s', (property) => {
     it.each(['0', '65536', 'not-a-number'])('rejects %p', (value) => {
       expect(() => validate({ ...validEnv, [property]: value })).toThrow();
     });
@@ -64,6 +66,7 @@ describe('validate', () => {
       'POSTGRES_DB',
       'KAFKA_BROKER',
       'KAFKA_CLIENT_ID',
+      'KAFKA_CONSUMER_GROUP_ID',
     ])('rejects an empty %s', (property) => {
       expect(() => validate({ ...validEnv, [property]: '' })).toThrow();
     });

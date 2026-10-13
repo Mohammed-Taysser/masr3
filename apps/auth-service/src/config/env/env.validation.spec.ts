@@ -35,6 +35,13 @@ const validEnv = {
 
   KAFKA_BROKER: 'localhost:42000',
   KAFKA_CLIENT_ID: 'auth-service',
+
+  REDIS_HOST: 'localhost',
+  REDIS_PORT: '44000',
+
+  OUTBOX_POLL_INTERVAL_MS: '1000',
+  OUTBOX_BATCH_SIZE: '100',
+  OUTBOX_RETENTION_MS: '604800000',
 };
 
 describe('validate', () => {
@@ -101,6 +108,11 @@ describe('validate', () => {
       'THROTTLE_LONG_LIMIT',
       'KAFKA_BROKER',
       'KAFKA_CLIENT_ID',
+      'REDIS_HOST',
+      'REDIS_PORT',
+      'OUTBOX_POLL_INTERVAL_MS',
+      'OUTBOX_BATCH_SIZE',
+      'OUTBOX_RETENTION_MS',
     ])('throws when %s is missing', (property) => {
       const config = { ...validEnv };
 
@@ -222,6 +234,19 @@ describe('validate', () => {
       expect(() =>
         validate({ ...validEnv, JWT_PRIVATE_KEY_FILE: '' }),
       ).toThrow();
+    });
+  });
+
+  describe('outbox and queue', () => {
+    it.each([
+      ['REDIS_PORT', '0'],
+      ['REDIS_PORT', '65536'],
+      ['REDIS_HOST', ''],
+      ['OUTBOX_POLL_INTERVAL_MS', '0'],
+      ['OUTBOX_BATCH_SIZE', '0'],
+      ['OUTBOX_RETENTION_MS', 'a week'],
+    ])('rejects %s=%p', (property, value) => {
+      expect(() => validate({ ...validEnv, [property]: value })).toThrow();
     });
   });
 

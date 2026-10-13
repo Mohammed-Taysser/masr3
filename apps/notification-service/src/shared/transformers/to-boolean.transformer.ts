@@ -8,11 +8,8 @@ import { TransformFnParams } from 'class-transformer';
  * becomes `true`. This reads the raw value off `obj`, because by the time the
  * transform runs `value` has already been coerced.
  */
-function toBoolean({
-  obj,
-  key,
-}: Pick<TransformFnParams, 'obj' | 'key'>): unknown {
-  const raw = obj?.[key];
+function toBoolean(params: Pick<TransformFnParams, 'obj' | 'key'>): unknown {
+  const raw = params.obj?.[params.key];
 
   if (typeof raw !== 'string') {
     return raw;

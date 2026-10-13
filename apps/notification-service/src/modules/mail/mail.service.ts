@@ -49,13 +49,11 @@ class MailService implements OnModuleInit {
       subject: options.subject,
       html: options.html,
       text: options.text,
-      attachments: options.attachments?.map(
-        ({ filename, contentType, url }) => ({
-          filename,
-          contentType,
-          href: url,
-        }),
-      ),
+      attachments: options.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        href: attachment.url,
+      })),
     });
 
     return info.messageId;

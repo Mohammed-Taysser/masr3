@@ -7,6 +7,9 @@ import {
 } from 'typeorm';
 
 import {
+  AuditActionEnum,
+  AuditActorTypeEnum,
+  AuditEntityTypeEnum,
   AuthenticatedUser,
   dayjs,
   TripActorEnum,
@@ -15,6 +18,7 @@ import {
 } from '@masr3/libs';
 
 import TripOfferEntity from '../entities/trip-offer.entity';
+import AuditRecorderService from '../../audit/audit-recorder.service';
 import TripEntity from '../entities/trip.entity';
 import TripOfferService from '../trip-offer.service';
 import {
@@ -38,6 +42,7 @@ describe('TripOfferService', () => {
   let service: TripOfferService;
   let manager: jest.Mocked<EntityManager>;
   let tripService: jest.Mocked<TripService>;
+  let auditRecorder: jest.Mocked<AuditRecorderService>;
   let tripRepository: jest.Mocked<Repository<TripEntity>>;
   let offerRepository: jest.Mocked<Repository<TripOfferEntity>>;
 
@@ -53,6 +58,12 @@ describe('TripOfferService', () => {
       expiresAt: dayjs().add(5, 'minute').toDate(),
     }) as TripEntity;
 
+  const driverActor = {
+    type: AuditActorTypeEnum.USER,
+    id: 5,
+    role: UserRoleEnum.DRIVER,
+  };
+
   const pendingOffer = {
     id: 12,
     tripId: 7,
@@ -67,6 +78,8 @@ describe('TripOfferService', () => {
       exists: jest.fn().mockResolvedValue(false),
       create: jest.fn((_entity, values) => values),
       save: jest.fn(async (values) => ({ ...values, id: 12 })),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      findOneByOrFail: jest.fn(),
     } as unknown as jest.Mocked<EntityManager>;
 
     const dataSource = {
@@ -79,20 +92,22 @@ describe('TripOfferService', () => {
       applyTransition: jest.fn(),
     } as unknown as jest.Mocked<TripService>;
 
+    auditRecorder = {
+      record: jest.fn(),
+    } as unknown as jest.Mocked<AuditRecorderService>;
+
     tripRepository = {
       findOneBy: jest.fn(),
     } as unknown as jest.Mocked<Repository<TripEntity>>;
 
     offerRepository = {
       find: jest.fn(),
-      update: jest.fn().mockResolvedValue({ affected: 1 }),
-      findOneBy: jest.fn(),
-      findOneByOrFail: jest.fn(),
     } as unknown as jest.Mocked<Repository<TripOfferEntity>>;
 
     service = new TripOfferService(
       dataSource,
       tripService,
+      auditRecorder,
       tripRepository,
       offerRepository,
     );
@@ -119,6 +134,18 @@ describe('TripOfferService', () => {
         status: TripOfferStatusEnum.PENDING,
       });
       expect(offer.id).toBe(12);
+      expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
+        action: AuditActionEnum.SUBMITTED,
+        entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: 12 },
+        actor: driverActor,
+        changes: {
+          tripId: { old: null, new: 7 },
+          driverId: { old: null, new: 5 },
+          amount: { old: null, new: 90 },
+          status: { old: null, new: TripOfferStatusEnum.PENDING },
+        },
+        metadata: null,
+      });
     });
 
     it('answers 404 for a missing trip', async () => {
@@ -247,41 +274,50 @@ describe('TripOfferService', () => {
   });
 
   describe('withdraw', () => {
-    it('withdraws the driver’s pending offer', async () => {
-      offerRepository.findOneByOrFail.mockResolvedValue({
+    it('locks the driver’s pending offer, withdraws it and audits the change', async () => {
+      manager.findOne.mockResolvedValue({ ...pendingOffer });
+      manager.findOneByOrFail.mockResolvedValue({
         ...pendingOffer,
         status: TripOfferStatusEnum.WITHDRAWN,
       });
 
       const offer = await service.withdraw(7, 12, driver);
 
-      expect(offerRepository.update).toHaveBeenCalledWith(
-        { id: 12, tripId: 7, driverId: 5, status: TripOfferStatusEnum.PENDING },
+      expect(manager.findOne).toHaveBeenCalledWith(TripOfferEntity, {
+        where: { id: 12, tripId: 7, driverId: 5 },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(manager.update).toHaveBeenCalledWith(
+        TripOfferEntity,
+        { id: 12 },
         { status: TripOfferStatusEnum.WITHDRAWN },
       );
       expect(offer.status).toBe(TripOfferStatusEnum.WITHDRAWN);
+      expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
+        action: AuditActionEnum.WITHDRAWN,
+        entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: 12 },
+        actor: driverActor,
+        changes: {
+          status: {
+            old: TripOfferStatusEnum.PENDING,
+            new: TripOfferStatusEnum.WITHDRAWN,
+          },
+        },
+        metadata: null,
+      });
     });
 
     it('answers 404 when the offer is not the driver’s', async () => {
-      offerRepository.update.mockResolvedValue({
-        affected: 0,
-        raw: [],
-        generatedMaps: [],
-      });
-      offerRepository.findOneBy.mockResolvedValue(null);
+      manager.findOne.mockResolvedValue(null);
 
       await expect(service.withdraw(7, 12, driver)).rejects.toThrow(
         NotFoundException,
       );
+      expect(auditRecorder.record).not.toHaveBeenCalled();
     });
 
     it('conflicts when the offer is already closed', async () => {
-      offerRepository.update.mockResolvedValue({
-        affected: 0,
-        raw: [],
-        generatedMaps: [],
-      });
-      offerRepository.findOneBy.mockResolvedValue({
+      manager.findOne.mockResolvedValue({
         ...pendingOffer,
         status: TripOfferStatusEnum.REJECTED,
       });
@@ -289,6 +325,8 @@ describe('TripOfferService', () => {
       await expect(service.withdraw(7, 12, driver)).rejects.toThrow(
         new ConflictException('The offer is no longer pending'),
       );
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(auditRecorder.record).not.toHaveBeenCalled();
     });
   });
 });

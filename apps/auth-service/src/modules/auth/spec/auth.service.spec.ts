@@ -1,7 +1,10 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 
 import {
+  AuditActor,
+  AuditActorTypeEnum,
   AuthKafkaTopic,
+  dayjs,
   REFRESH_TOKEN_AUDIENCE,
   TokenUseEnum,
   TokenVerifierService,
@@ -41,6 +44,12 @@ describe('AuthService', () => {
     isActive: true,
   } as UserEntity;
 
+  const userActor: AuditActor = {
+    type: AuditActorTypeEnum.USER,
+    id: user.id,
+    role: user.role,
+  };
+
   const accessToken = 'access-token';
   const refreshToken = 'refresh-token';
   const tokens = {
@@ -57,11 +66,12 @@ describe('AuthService', () => {
       findByValidResetToken: jest.fn(),
       findByIdOrFail: jest.fn(),
       findById: jest.fn(),
-      create: jest.fn(),
+      register: jest.fn(),
+      recordLogin: jest.fn().mockResolvedValue(undefined),
       setPasswordResetToken: jest.fn(),
       resetPassword: jest.fn(),
       changePassword: jest.fn(),
-      incrementTokenVersion: jest.fn(),
+      logout: jest.fn(),
     } as unknown as jest.Mocked<UsersService>;
 
     passwordService = {
@@ -112,7 +122,7 @@ describe('AuthService', () => {
 
       passwordService.hash.mockResolvedValue('hashed-password');
 
-      usersService.create.mockResolvedValue(user);
+      usersService.register.mockResolvedValue(user);
 
       const result = await service.register(dto);
 
@@ -120,7 +130,7 @@ describe('AuthService', () => {
 
       expect(passwordService.hash).toHaveBeenCalledWith(dto.password);
 
-      expect(usersService.create).toHaveBeenCalledWith({
+      expect(usersService.register).toHaveBeenCalledWith({
         ...dto,
         password: 'hashed-password',
       });
@@ -148,7 +158,7 @@ describe('AuthService', () => {
       );
 
       expect(passwordService.hash).not.toHaveBeenCalled();
-      expect(usersService.create).not.toHaveBeenCalled();
+      expect(usersService.register).not.toHaveBeenCalled();
       expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
   });
@@ -176,6 +186,8 @@ describe('AuthService', () => {
         dto.password,
         user.password,
       );
+
+      expect(usersService.recordLogin).toHaveBeenCalledWith(user);
 
       expect(tokenService.generateAccessToken).toHaveBeenCalledWith(user);
       expect(tokenService.generateRefreshToken).toHaveBeenCalledWith(user);
@@ -208,6 +220,7 @@ describe('AuthService', () => {
       );
 
       expect(passwordService.compare).not.toHaveBeenCalled();
+      expect(usersService.recordLogin).not.toHaveBeenCalled();
       expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
 
@@ -221,6 +234,8 @@ describe('AuthService', () => {
       await expect(service.login(dto)).rejects.toThrow(
         new UnauthorizedException('Invalid email or password'),
       );
+
+      expect(usersService.recordLogin).not.toHaveBeenCalled();
 
       expect(tokenService.generateAccessToken).not.toHaveBeenCalled();
     });
@@ -323,6 +338,7 @@ describe('AuthService', () => {
       expect(usersService.resetPassword).toHaveBeenCalledWith(
         user.id,
         'new-hashed-password',
+        userActor,
       );
 
       expect(result).toEqual({
@@ -350,7 +366,7 @@ describe('AuthService', () => {
     };
 
     it('creates and stores a password reset token for an existing user', async () => {
-      const expiresAt = new Date('2026-09-22T14:00:00.000Z');
+      const expiresAt = dayjs('2026-09-22T14:00:00.000Z').toDate();
 
       usersService.findByEmail.mockResolvedValue(user);
 
@@ -444,6 +460,7 @@ describe('AuthService', () => {
       expect(usersService.changePassword).toHaveBeenCalledWith(
         user.id,
         'new-hashed-password',
+        userActor,
       );
 
       expect(result).toEqual({
@@ -478,13 +495,13 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('increments the token version and publishes a logout event', async () => {
+    it('logs the user out as their own actor and publishes a logout event', async () => {
       usersService.findByIdOrFail.mockResolvedValue(user);
-      usersService.incrementTokenVersion.mockResolvedValue();
+      usersService.logout.mockResolvedValue();
 
       const result = await service.logout(user.id);
 
-      expect(usersService.incrementTokenVersion).toHaveBeenCalledWith(user.id);
+      expect(usersService.logout).toHaveBeenCalledWith(user.id, userActor);
 
       expect(kafkaProducer.publish).toHaveBeenCalledWith(
         AuthKafkaTopic.USER_LOGGED_OUT,

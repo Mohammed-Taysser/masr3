@@ -4,23 +4,41 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  DataSource,
+  EntityManager,
   FindOptionsWhere,
   ILike,
   QueryDeepPartialEntity,
   Repository,
 } from 'typeorm';
-import UserEntity from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
+
+import {
+  ANONYMOUS_AUDIT_ACTOR,
+  AuditActionEnum,
+  AuditActor,
+  AuditEntityTypeEnum,
+  buildAuditChanges,
+  buildUserAuditActor,
+  dayjs,
+} from '@masr3/libs';
+
+import AuditRecorderService from '../audit/audit-recorder.service';
+
+import UserEntity from './entities/user.entity';
 import CreateUserDto from './dto/create-user.dto';
 import { PasswordResetTokenOptions } from './users.interface';
 import UpdateUserDto from './dto/update-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';
+import { USER_AUDITED_FIELDS } from './users.constant';
 
 @Injectable()
 class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+    private readonly dataSource: DataSource,
+    private readonly auditRecorder: AuditRecorderService,
   ) {}
 
   async findAll(query: ListUsersQueryDto) {
@@ -38,23 +56,17 @@ class UsersService {
     return this.buildPaginationResponse(items, total, page, limit);
   }
 
-  async create(dto: CreateUserDto): Promise<UserEntity> {
-    const existingUser = await this.userRepository.findOne({
-      where: {
-        email: dto.email,
-      },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Email is already registered');
-    }
-
-    const user = this.userRepository.create(dto);
-
-    return this.userRepository.save(user);
+  // An admin creating an account.
+  async create(dto: CreateUserDto, actor: AuditActor): Promise<UserEntity> {
+    return this.insert(dto, AuditActionEnum.CREATED, () => actor);
   }
 
-  async update(id: number, dto: UpdateUserDto) {
+  // Someone signing themselves up: the new user is their own actor.
+  async register(dto: CreateUserDto): Promise<UserEntity> {
+    return this.insert(dto, AuditActionEnum.REGISTERED, buildUserAuditActor);
+  }
+
+  async update(id: number, dto: UpdateUserDto, actor: AuditActor) {
     if (Object.keys(dto).length === 0) {
       return this.findByIdOrFail(id);
     }
@@ -68,19 +80,25 @@ class UsersService {
         `"tokenVersion" + CASE WHEN "role" = :role THEN 0 ELSE 1 END`;
     }
 
-    const result = await this.userRepository
-      .createQueryBuilder()
-      .update(UserEntity)
-      .set(values)
-      .where('id = :id', { id })
-      .setParameter('role', dto.role)
-      .execute();
+    return this.writeAudited(id, AuditActionEnum.UPDATED, actor, (manager) =>
+      manager
+        .createQueryBuilder()
+        .update(UserEntity)
+        .set(values)
+        .where('id = :id', { id })
+        .setParameter('role', dto.role)
+        .execute(),
+    );
+  }
 
-    if (result.affected === 0) {
-      throw new NotFoundException('User not found');
-    }
-
-    return this.findByIdOrFail(id);
+  async recordLogin(user: UserEntity): Promise<void> {
+    await this.auditRecorder.record(this.dataSource.manager, {
+      action: AuditActionEnum.LOGGED_IN,
+      entity: { type: AuditEntityTypeEnum.USER, id: user.id },
+      actor: buildUserAuditActor(user),
+      changes: null,
+      metadata: null,
+    });
   }
 
   async findByEmail(email: string): Promise<UserEntity | null> {
@@ -124,55 +142,74 @@ class UsersService {
     return user;
   }
 
-  async remove(id: number): Promise<UserEntity> {
-    const user = await this.findByIdOrFail(id);
+  async remove(id: number, actor: AuditActor): Promise<UserEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const user = await UsersService.lockOrFail(manager, id);
 
-    await this.userRepository.remove(user);
+      await manager.delete(UserEntity, { id });
 
-    return user;
+      await this.auditRecorder.record(manager, {
+        action: AuditActionEnum.DELETED,
+        entity: { type: AuditEntityTypeEnum.USER, id },
+        actor,
+        changes: buildAuditChanges(user, null, USER_AUDITED_FIELDS),
+        metadata: null,
+      });
+
+      return user;
+    });
   }
 
-  async setActive(id: number, isActive: boolean): Promise<void> {
+  async setActive(
+    id: number,
+    isActive: boolean,
+    actor: AuditActor,
+  ): Promise<void> {
     // Deactivating bumps tokenVersion too, so a later reactivation cannot
     // revive refresh tokens issued before it.
-    const result = await this.userRepository.update(
-      { id },
-      isActive
-        ? { isActive }
-        : { isActive, tokenVersion: () => '"tokenVersion" + 1' },
+    await this.writeAudited(
+      id,
+      AuditActionEnum.STATUS_CHANGED,
+      actor,
+      (manager) =>
+        manager.update(
+          UserEntity,
+          { id },
+          isActive
+            ? { isActive }
+            : { isActive, tokenVersion: () => '"tokenVersion" + 1' },
+        ),
     );
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
   }
 
-  async incrementTokenVersion(id: number): Promise<void> {
-    const result = await this.userRepository.increment(
-      { id },
-      'tokenVersion',
-      1,
+  async logout(id: number, actor: AuditActor): Promise<void> {
+    await this.writeAudited(id, AuditActionEnum.LOGGED_OUT, actor, (manager) =>
+      manager.increment(UserEntity, { id }, 'tokenVersion', 1),
     );
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
   }
 
+  // Anyone can ask for a reset by email, so nobody is signed in as the actor.
   async setPasswordResetToken(
     id: number,
     options: PasswordResetTokenOptions,
   ): Promise<void> {
     const { tokenHash, expiresAt } = options;
 
-    const result = await this.userRepository.update(
-      { id },
-      { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt },
+    await this.writeAudited(
+      id,
+      AuditActionEnum.PASSWORD_RESET_REQUESTED,
+      ANONYMOUS_AUDIT_ACTOR,
+      (manager) =>
+        manager.update(
+          UserEntity,
+          { id },
+          {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpiresAt: expiresAt,
+          },
+        ),
+      { expiresAt: dayjs(expiresAt).toISOString() },
     );
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
   }
 
   async findByValidResetToken(tokenHash: string): Promise<UserEntity | null> {
@@ -196,34 +233,120 @@ class UsersService {
     }
   }
 
-  async resetPassword(id: number, hashedPassword: string): Promise<void> {
-    const result = await this.userRepository.update(
-      { id },
-      {
-        password: hashedPassword,
-        passwordResetTokenHash: null,
-        passwordResetExpiresAt: null,
-        tokenVersion: () => '"tokenVersion" + 1',
-      },
+  async resetPassword(
+    id: number,
+    hashedPassword: string,
+    actor: AuditActor,
+  ): Promise<void> {
+    await this.writeAudited(
+      id,
+      AuditActionEnum.PASSWORD_RESET_COMPLETED,
+      actor,
+      (manager) =>
+        manager.update(
+          UserEntity,
+          { id },
+          {
+            password: hashedPassword,
+            passwordResetTokenHash: null,
+            passwordResetExpiresAt: null,
+            tokenVersion: () => '"tokenVersion" + 1',
+          },
+        ),
     );
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
   }
 
-  async changePassword(id: number, hashedPassword: string): Promise<void> {
-    const result = await this.userRepository.update(
-      { id },
-      {
-        password: hashedPassword,
-        tokenVersion: () => '"tokenVersion" + 1',
-      },
+  async changePassword(
+    id: number,
+    hashedPassword: string,
+    actor: AuditActor,
+  ): Promise<void> {
+    await this.writeAudited(
+      id,
+      AuditActionEnum.PASSWORD_CHANGED,
+      actor,
+      (manager) =>
+        manager.update(
+          UserEntity,
+          { id },
+          {
+            password: hashedPassword,
+            tokenVersion: () => '"tokenVersion" + 1',
+          },
+        ),
     );
+  }
 
-    if (result.affected === 0) {
+  private async insert(
+    dto: CreateUserDto,
+    action: AuditActionEnum,
+    actorFor: (user: UserEntity) => AuditActor,
+  ): Promise<UserEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const existingUser = await manager.findOneBy(UserEntity, {
+        email: dto.email,
+      });
+
+      if (existingUser) {
+        throw new ConflictException('Email is already registered');
+      }
+
+      const user = await manager.save(manager.create(UserEntity, dto));
+
+      await this.auditRecorder.record(manager, {
+        action,
+        entity: { type: AuditEntityTypeEnum.USER, id: user.id },
+        actor: actorFor(user),
+        changes: buildAuditChanges(null, user, USER_AUDITED_FIELDS),
+        metadata: null,
+      });
+
+      return user;
+    });
+  }
+
+  // Locks the row, applies the write, and records the before/after diff in the
+  // same transaction, so the audit entry exists exactly when the change does.
+  private async writeAudited(
+    id: number,
+    action: AuditActionEnum,
+    actor: AuditActor,
+    write: (manager: EntityManager) => Promise<unknown>,
+    metadata: Record<string, unknown> | null = null,
+  ): Promise<UserEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const before = await UsersService.lockOrFail(manager, id);
+
+      await write(manager);
+
+      const after = await manager.findOneByOrFail(UserEntity, { id });
+
+      await this.auditRecorder.record(manager, {
+        action,
+        entity: { type: AuditEntityTypeEnum.USER, id },
+        actor,
+        changes: buildAuditChanges(before, after, USER_AUDITED_FIELDS),
+        metadata,
+      });
+
+      return after;
+    });
+  }
+
+  private static async lockOrFail(
+    manager: EntityManager,
+    id: number,
+  ): Promise<UserEntity> {
+    const user = await manager.findOne(UserEntity, {
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
+
+    return user;
   }
 
   private prepareListWhere(

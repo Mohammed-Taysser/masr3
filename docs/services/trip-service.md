@@ -4,7 +4,7 @@ Owns trips, rides and parcels, from request to completion, in the inDrive style:
 proposes a fare, drivers accept it or counter-offer, and the customer picks one offer.
 
 - **Port** 7002, database `trip-db` (41002), Swagger at `http://localhost:7002/api/docs`.
-- **Owns:** trips, their status history, offers, and the outbox of trip events.
+- **Owns:** trips, their status history, offers, and the outbox of trip and audit events.
 - **Does not own:** users (auth-service) or messages to people (notification-service). It knows
   users only by id.
 
@@ -19,6 +19,8 @@ flowchart LR
   trip -->|BullMQ jobs| redis[(Redis :44000)]
   trip -->|outbox relay| topic{{trip.status-changed}}
   topic -->|trip emails| notification[notification-service]
+  trip -->|outbox relay| audit{{audit.action-recorded}}
+  audit -->|audit trail| auditService[audit-service]
 ```
 
 ## Data model
@@ -67,7 +69,7 @@ erDiagram
     int id PK
     uuid eventId UK
     string topic
-    string key "tripId"
+    string key "tripId, or TRIP-id / TRIP_OFFER-id for audit"
     jsonb payload
     int attempts
     string lastError
@@ -148,6 +150,7 @@ sequenceDiagram
   S->>DB: INSERT trips (REQUESTED, expiresAt = now + TRIP_REQUEST_TTL_MS)
   S->>DB: INSERT trip_status_history (null to REQUESTED)
   S->>DB: INSERT outbox_events (trip.status-changed)
+  S->>DB: INSERT outbox_events (audit TRIP CREATED)
   S->>DB: COMMIT
   S-)Q: add EXPIRE_TRIP, jobId trip-id, delay until expiresAt
   S-->>C: 201 trip
@@ -169,6 +172,7 @@ sequenceDiagram
   D->>O: POST /trips/:id/offers { amount }
   O->>DB: SELECT trip FOR SHARE
   O->>DB: INSERT trip_offers (PENDING)
+  O->>DB: INSERT outbox_events (audit TRIP_OFFER SUBMITTED)
   O-->>D: 201 offer
   C->>O: POST /trips/:id/offers/:offerId/accept
   O->>S: transition(ACCEPTED, acceptedOfferId)
@@ -176,7 +180,7 @@ sequenceDiagram
   S->>S: assertTransitionAllowed
   S->>DB: UPDATE trips (ACCEPTED, driverId, agreedFare)
   S->>DB: UPDATE offers (chosen ACCEPTED, others REJECTED)
-  S->>DB: INSERT history + outbox row
+  S->>DB: INSERT history + outbox rows (status event, audit)
   S-->>C: 200 trip
 ```
 
@@ -184,6 +188,8 @@ sequenceDiagram
   an acceptance in progress. `409` when the trip is not REQUESTED, has expired, or the driver
   already has an active trip. An `amount` equal to `proposedFare` means "I'll take it as is".
 - **Lock order is always trip, then offers**, in both flows, so they cannot deadlock.
+- **Withdrawing** locks the driver's own offer `FOR UPDATE`, checks it is still PENDING, marks
+  it WITHDRAWN and writes a `TRIP_OFFER` `WITHDRAWN` audit row, in one transaction.
 - **Accepting** finds the offer through the trip's `customerId`, so a stranger gets `404`
   whatever the offer's state. Two concurrent accepts: one wins, the other gets `409`. If the
   offer was withdrawn a moment earlier, the whole acceptance rolls back with `409`.
@@ -204,7 +210,8 @@ sequenceDiagram
   S->>DB: UPDATE trips SET status
   S->>DB: close PENDING offers if leaving REQUESTED
   S->>DB: INSERT trip_status_history
-  S->>DB: INSERT outbox_events
+  S->>DB: INSERT outbox_events (trip.status-changed)
+  S->>DB: INSERT outbox_events (audit TRIP STATUS_CHANGED, before/after diff)
   S->>DB: COMMIT
   S-->>U: 200 trip
 ```
@@ -253,7 +260,7 @@ sequenceDiagram
     R->>R: return, that instance is relaying
   else lock taken
     R->>DB: SELECT up to OUTBOX_BATCH_SIZE pending rows ORDER BY id
-    R->>K: send batch, keyed by tripId
+    R->>K: send batch, each row with its own topic and key
     alt Kafka accepted
       R->>DB: SET publishedAt
     else Kafka failed
@@ -270,9 +277,10 @@ failing events: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER B
 
 ## Events
 
-| Topic                 | Key      | Contract                                              | Consumers                          |
-| --------------------- | -------- | ----------------------------------------------------- | ---------------------------------- |
-| `trip.status-changed` | `tripId` | `TripStatusChangedEvent` (`libs/src/lib/kafka/trip/`) | notification-service (trip emails) |
+| Topic                   | Key                            | Contract                                                 | Consumers                          |
+| ----------------------- | ------------------------------ | -------------------------------------------------------- | ---------------------------------- |
+| `trip.status-changed`   | `tripId`                       | `TripStatusChangedEvent` (`libs/src/lib/kafka/trip/`)    | notification-service (trip emails) |
+| `audit.action-recorded` | `TRIP-<id>`, `TRIP_OFFER-<id>` | `AuditActionRecordedEvent` (`libs/src/lib/kafka/audit/`) | audit-service                      |
 
 - **One topic for every status change.** Kafka orders messages only within a partition, so
   per-status topics could deliver "cancelled" before "accepted". Consumers filter on
@@ -282,7 +290,15 @@ failing events: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER B
   `eventId` and `occurredAt`.
 - It also carries `pickupAddress`, `dropoffAddress` and `currency`, so a consumer can describe
   the trip ("Tahrir Square → Zamalek, EGP 95.00") without calling trip-service.
-- Offers are not published. Acceptance already emits REQUESTED → ACCEPTED.
+- Offers have no domain topic. Acceptance already emits REQUESTED → ACCEPTED.
+- **Audit events** go through the same outbox, in the same transaction as the change
+  (`AuditRecorderService` in `modules/audit/`): `TRIP` `CREATED` and `STATUS_CHANGED`,
+  `TRIP_OFFER` `SUBMITTED` and
+  `WITHDRAWN`. `changes` is `buildAuditChanges(before, after, TRIP_AUDITED_FIELDS)`.
+  The allow-list leaves the parcel recipient's name and phone out. The actor keeps its role
+  (`TRIP_ACTOR_TO_ROLE`, applied by `TripService.auditActorFor`); SYSTEM expiry is a SYSTEM
+  actor. See
+  [audit-service](audit-service.md).
 
 ## Authentication
 

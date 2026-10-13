@@ -22,28 +22,18 @@ class DeliveryLogService {
     private readonly deliveryQueue: DeliveryQueueService,
   ) {}
 
-  async list({
-    status,
-    channel,
-    userId,
-    page,
-    limit,
-  }: ListDeliveriesQueryDto): Promise<Paginated<NotificationDeliveryEntity>> {
-    const where: FindOptionsWhere<NotificationDeliveryEntity> = {
-      ...(status && { status }),
-      ...(channel && { channel }),
-      ...(userId && { notification: { userId } }),
-    };
-
+  async list(
+    query: ListDeliveriesQueryDto,
+  ): Promise<Paginated<NotificationDeliveryEntity>> {
     const [items, total] = await this.deliveryRepository.findAndCount({
-      where,
+      where: DeliveryLogService.prepareListWhere(query),
       relations: { notification: true },
       order: { id: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
     });
 
-    return paginate(items, total, page, limit);
+    return paginate(items, total, query.page, query.limit);
   }
 
   async retry(id: number): Promise<NotificationDeliveryEntity> {
@@ -84,6 +74,16 @@ class DeliveryLogService {
     }
 
     return { ...delivery, status: DeliveryStatusEnum.QUEUED, lastError: null };
+  }
+
+  private static prepareListWhere(
+    query: ListDeliveriesQueryDto,
+  ): FindOptionsWhere<NotificationDeliveryEntity> {
+    return {
+      ...(query.status && { status: query.status }),
+      ...(query.channel && { channel: query.channel }),
+      ...(query.userId && { notification: { userId: query.userId } }),
+    };
   }
 }
 

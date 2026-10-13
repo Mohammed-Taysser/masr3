@@ -17,13 +17,19 @@ import {
 } from 'typeorm';
 
 import {
+  AuditActionEnum,
+  AuditActor,
+  AuditActorTypeEnum,
+  AuditEntityTypeEnum,
   AuthenticatedUser,
+  buildAuditChanges,
   dayjs,
   EventPayload,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusChangedEvent,
   TripStatusEnum,
+  SYSTEM_AUDIT_ACTOR,
   TripTypeEnum,
   UserRoleEnum,
 } from '@masr3/libs';
@@ -31,12 +37,15 @@ import {
 import { isUniqueViolation } from '../../shared/database/postgres-error';
 import { Paginated } from '../../shared/pagination/pagination.interface';
 import { paginate } from '../../shared/pagination/pagination';
+import AuditRecorderService from '../audit/audit-recorder.service';
 import OutboxService from '../outbox/outbox.service';
 import ListTripsQueryDto from './dto/list-trips-query.dto';
 import TripOfferEntity from './entities/trip-offer.entity';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import {
+  TRIP_ACTOR_TO_ROLE,
+  TRIP_AUDITED_FIELDS,
   TRIP_CURRENCY,
   TRIP_EXPIRY_QUEUE,
   UQ_TRIPS_ACTIVE_CUSTOMER,
@@ -62,6 +71,7 @@ class TripService {
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly outboxService: OutboxService,
+    private readonly auditRecorder: AuditRecorderService,
     @InjectRepository(TripEntity)
     private readonly tripRepository: Repository<TripEntity>,
     @InjectRepository(TripStatusHistoryEntity)
@@ -115,6 +125,17 @@ class TripService {
           ),
           String(created.id),
         );
+
+        await this.auditRecorder.record(manager, {
+          action: AuditActionEnum.CREATED,
+          entity: { type: AuditEntityTypeEnum.TRIP, id: created.id },
+          actor: TripService.auditActorFor(
+            TripActorEnum.CUSTOMER,
+            command.customerId,
+          ),
+          changes: buildAuditChanges(null, created, TRIP_AUDITED_FIELDS),
+          metadata: null,
+        });
 
         return created;
       });
@@ -246,6 +267,14 @@ class TripService {
       String(tripId),
     );
 
+    await this.auditRecorder.record(manager, {
+      action: AuditActionEnum.STATUS_CHANGED,
+      entity: { type: AuditEntityTypeEnum.TRIP, id: tripId },
+      actor: TripService.auditActorFor(actor, actorId),
+      changes: buildAuditChanges(trip, updated, TRIP_AUDITED_FIELDS),
+      metadata: { reason, acceptedOfferId: acceptedOfferId ?? null },
+    });
+
     return updated;
   }
 
@@ -289,16 +318,7 @@ class TripService {
     user: AuthenticatedUser,
     query: ListTripsQueryDto,
   ): Promise<Paginated<TripEntity>> {
-    const where: FindOptionsWhere<TripEntity> =
-      user.role === UserRoleEnum.DRIVER
-        ? { driverId: user.id }
-        : { customerId: user.id };
-
-    if (query.status) {
-      where.status = query.status;
-    }
-
-    return this.list(where, query);
+    return this.list(TripService.prepareMineWhere(user, query), query);
   }
 
   listOpen(query: ListTripsQueryDto): Promise<Paginated<TripEntity>> {
@@ -313,16 +333,44 @@ class TripService {
 
   private async list(
     where: FindOptionsWhere<TripEntity>,
-    { page, limit }: ListTripsQueryDto,
+    query: ListTripsQueryDto,
   ): Promise<Paginated<TripEntity>> {
     const [items, total] = await this.tripRepository.findAndCount({
       where,
       order: { createdAt: 'DESC', id: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
     });
 
-    return paginate(items, total, page, limit);
+    return paginate(items, total, query.page, query.limit);
+  }
+
+  // A driver lists the trips they drive, everyone else the trips they asked for.
+  private static prepareMineWhere(
+    user: AuthenticatedUser,
+    query: ListTripsQueryDto,
+  ): FindOptionsWhere<TripEntity> {
+    return {
+      ...(user.role === UserRoleEnum.DRIVER
+        ? { driverId: user.id }
+        : { customerId: user.id }),
+      ...(query.status && { status: query.status }),
+    };
+  }
+
+  // The trip actor keeps its role in the audit trail; SYSTEM (the expiry job)
+  // has none.
+  private static auditActorFor(
+    actor: TripActorEnum,
+    actorId: number | null,
+  ): AuditActor {
+    const role = TRIP_ACTOR_TO_ROLE[actor];
+
+    if (!role) {
+      return SYSTEM_AUDIT_ACTOR;
+    }
+
+    return { type: AuditActorTypeEnum.USER, id: actorId, role };
   }
 
   // No PENDING offer may outlive its trip's REQUESTED status. If the offer

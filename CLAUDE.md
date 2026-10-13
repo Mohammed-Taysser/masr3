@@ -9,9 +9,11 @@ Docker runs only the infrastructure. The apps run on the host through Nx.
 | `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*` |
 | `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences      |
 | `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding                         |
+| `audit-service`        | 7003 | `audit-db` (41003)        | Audit trail of every service; consumes `audit.action-recorded` |
 
 All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`;
-trip-service and notification-service also use Redis (`localhost:44000`) for BullMQ jobs.
+auth-service, trip-service and notification-service also use Redis (`localhost:44000`) for BullMQ
+jobs.
 Each service is described, with diagrams, in `docs/services/<svc>.md`; the stack, ports and Kafka
 in `docs/infrastructure.md`. `README.md` is the entry point: the system overview, links to every
 doc, setup and commands.
@@ -59,6 +61,17 @@ doc, setup and commands.
 
 - **Full words in identifiers.** Write `latitude` / `longitude`, never `lat` / `lng`, and no other
   abbreviations. This covers columns, DTO fields, event payloads and variables.
+- **Never destructure an object in a parameter.** Take it as one named parameter and read its
+  fields: `list(query: ListTripsQueryDto)` then `query.page`, not `list({ page, limit })`. This
+  covers methods, functions and callbacks: `(delivery) => delivery.skipReason`,
+  `@Transform((params) => params.value)`, `handleMessage(payload: EachMessagePayload)`. Tuple
+  destructuring of `Map` / `Object.entries` pairs (`([topic, messages]) =>`) is allowed.
+- **List filters live in their own private method.** A list method passes
+  `prepareListWhere(query)` (static when it needs no `this`) to `findAndCount`, together with
+  order and pagination; it never builds the `where` inline. The method returns
+  `FindOptionsWhere<Entity>` built from the query's optional fields
+  (`...(query.status && { status: query.status })`). Examples: `UsersService`,
+  `AuditService`, `DeliveryLogService`, `InboxService`, `TripService.prepareMineWhere`.
 - **Comments are sparse.** Comment only a non-obvious _why_, in a line or two. No docblocks
   restating the code.
 - **Prettier** uses `singleQuote`. Run it on every file you touch.
@@ -90,7 +103,8 @@ doc, setup and commands.
   - Put it in `libs` only when it is truly cross-service (Kafka contracts, dayjs).
   - Import libs as `@masr3/libs`.
 - **No shell wrappers.** Use an Nx `run-commands` target that calls the tool directly, for
-  example `ts-node -r tsconfig-paths/register <script>`, not a `.sh` that does the same.
+  example `ts-node -r tsconfig-paths/register <script>`, not a `.sh` that does the same. The
+  exception is each service's `scripts/kafka-create-topics.sh`, which every topic owner keeps.
 
 ## Service layout
 
@@ -114,6 +128,8 @@ apps/<svc>/
     health/                           public GET /api/health → { status, service: SERVICE_NAME, timestamp }
     kafka/                            producer and/or consumer service + module (when the service uses Kafka)
     queue/                            BullMQ root module: the Redis connection (when the service has jobs)
+    modules/outbox/                   transactional outbox + relay (when it publishes events that matter)
+    modules/audit/                    AuditRecorderService (when it produces audit events; needs the outbox)
     modules/<name>/
       entities/<name>.entity.ts
       dto/*.dto.ts
@@ -219,7 +235,9 @@ apps/<svc>/
   - The job must be safe to run twice, or concurrently on two instances: go through the same
     locked service method as everything else.
 - **Names:** queue names and scheduler ids are constants in `<module>.constant.ts`, job names an
-  enum in `<module>.enum.ts`, payloads an interface in `<module>.interface.ts`. Register a queue
+  enum in `<module>.enum.ts`, payloads an interface in `<module>.interface.ts`. Queue names are
+  global across services (one Redis, default prefix): never reuse another service's name
+  (auth-service's relay is `AUTH-OUTBOX-RELAY`, not `OUTBOX-RELAY`). Register a queue
   with `BullModule.registerQueue` in its feature module.
 - **UI:** bull-board at `http://localhost:44001`. It discovers queues only at startup, so after a
   new or renamed queue first appears, run `docker compose up -d --no-deps --force-recreate bull-board`.
@@ -244,6 +262,24 @@ notification-service is the only sender; other services publish events. Design:
 - A new real channel = a provider implementing `ChannelProvider`, registered in
   `ChannelProviderRegistry`, and a queue plus processor.
 
+## Audit
+
+audit-service is the only store of the audit trail; other services produce to
+`audit.action-recorded`. Design: `docs/services/audit-service.md`.
+
+- **Every state change a service makes is audited**, through that service's transactional
+  outbox, in the same transaction as the change. A service that audits must have an outbox.
+- **One `modules/audit/` per producing service** (copy trip-service's): `AuditModule` exports
+  `AuditRecorderService.record(manager, record: AuditRecord)`, which adds the envelope and
+  enqueues it. Features import `AuditModule`; no per-feature audit helpers.
+- **One generic envelope** (`AuditActionRecordedEvent`). A new audited action is a new
+  `AuditActionEnum` value; audit-service needs no change. Its classifier columns are `varchar`
+  on purpose, so an unknown value never stalls the consumer.
+- **Diffs** come from `buildAuditChanges(before, after, <SVC>_AUDITED_FIELDS)`, an explicit
+  allow-list in `<module>.constant.ts`. Never list a password, hash, token or secret.
+- **Actors:** `buildUserAuditActor(user)`, `SYSTEM_AUDIT_ACTOR`, `ANONYMOUS_AUDIT_ACTOR`.
+  `service` is the producer's `SERVICE_NAME`. Key with `buildAuditEventKey(entity)`.
+
 ## Kafka
 
 - **Plaintext, no SASL.** Topics are created explicitly: `allowAutoTopicCreation: false` on
@@ -261,7 +297,10 @@ notification-service is the only sender; other services publish events. Design:
   compile. Consumers map every topic to a handler.
 - **Consumer failures:**
   - A message that can never succeed (unknown topic, bad JSON, missing fields) is logged and
-    skipped.
+    skipped. Validate it with a class-validator DTO per topic that `implements` the libs event
+    interface (`plainToInstance` + `validateSync`), never hand-written `typeof` checks. Check
+    what the handler and the insert need (formats, ranges, nested objects); use `@IsString`,
+    not `@IsEnum`, for values the producer may extend, or a new value is dropped.
   - A delivery failure is not a consumer failure: notification-service records it on the
     delivery row and BullMQ retries it.
   - Anything else is rethrown, so the offset is not committed.
