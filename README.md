@@ -78,12 +78,13 @@ Each service doc has its data model, its flows as diagrams, its events and a **P
 
 ## Guides
 
-| Guide                                                         | Covers                                                 |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| [Infrastructure](docs/infrastructure.md)                      | the Docker stack, ports, pgbouncer, Kafka, Redis, ops  |
-| [Adding a service](docs/adding-a-service.md)                  | step by step, with a checklist                         |
-| [Authentication](docs/authentication.md)                      | token types, protecting routes, calling services, keys |
-| [Transactional outbox](docs/patterns/transactional-outbox.md) | publishing events that must not be lost                |
+| Guide                                                         | Covers                                                    |
+| ------------------------------------------------------------- | --------------------------------------------------------- |
+| [Infrastructure](docs/infrastructure.md)                      | the Docker stack, ports, pgbouncer, Kafka, Redis, ops     |
+| [Adding a service](docs/adding-a-service.md)                  | step by step, with a checklist                            |
+| [Authentication](docs/authentication.md)                      | token types, protecting routes, calling services, keys    |
+| [Swagger UI and Postman](docs/swagger-and-postman.md)         | authorizing in Swagger UI, generating Postman collections |
+| [Transactional outbox](docs/patterns/transactional-outbox.md) | publishing events that must not be lost                   |
 
 ## Getting started
 
@@ -117,19 +118,20 @@ npx nx run-many -t serve                                          # run all on t
 
 Useful individual targets:
 
-| Command                                                 | What it does                                                                 |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `npx nx serve auth-service`                             | Run one service on the host                                                  |
-| `npx nx run-many -t lint,test,typecheck`                | Lint, test and type-check every project (app, spec and script files)         |
-| `npx nx run <service>:migrate`                          | Run pending migrations for one service                                       |
-| `npx nx run <service>:migrate-generate --name=X`        | Generate a migration by diffing entities against the live DB                 |
-| `npx nx run <service>:migrate-revert`                   | Revert the last migration                                                    |
-| `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                    |
-| `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                         |
-| `npx nx run trip-service:kafka:create-topics`           | Create `trip.status-changed`, idempotently                                   |
-| `npx nx run audit-service:kafka:create-topics`          | Create `audit.action-recorded`, idempotently                                 |
-| `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites) |
-| `npx nx run notification-service:preview-templates`     | Render every notification on each channel to `dist/notification-previews/`   |
+| Command                                                 | What it does                                                                                                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npx nx serve auth-service`                             | Run one service on the host                                                                                                                                                          |
+| `npx nx run-many -t lint,test,typecheck`                | Lint, test and type-check every project (app, spec and script files)                                                                                                                 |
+| `npx nx run <service>:migrate`                          | Run pending migrations for one service                                                                                                                                               |
+| `npx nx run <service>:migrate-generate --name=X`        | Generate a migration by diffing entities against the live DB                                                                                                                         |
+| `npx nx run <service>:migrate-revert`                   | Revert the last migration                                                                                                                                                            |
+| `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                                                                                                                            |
+| `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                                                                                                                                 |
+| `npx nx run trip-service:kafka:create-topics`           | Create `trip.status-changed`, idempotently                                                                                                                                           |
+| `npx nx run audit-service:kafka:create-topics`          | Create `audit.action-recorded`, idempotently                                                                                                                                         |
+| `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites)                                                                                                         |
+| `npx nx run notification-service:preview-templates`     | Render every notification on each channel to `dist/notification-previews/`                                                                                                           |
+| `npx nx run postman:generate`                           | Postman collection per running service with Swagger (`dist/postman/collections/`) plus one combined `dist/postman/masr3.postman_collection.json`; prints what it created and skipped |
 
 ### Ports
 
@@ -275,6 +277,12 @@ To look at every email without sending one:
 auth-service's Swagger groups the service-only routes (`/service-tokens`, `/internal/...`) under the
 `internal` tag; use **Authorize** with `bearer` for user and service tokens, `basic` for client
 credentials.
+
+**Authorize** only stores the credential; it is sent when you _Execute_ a route with a 🔒. Paste the
+token without the `Bearer` prefix (Swagger UI adds it), and authorize on each service's page separately. The
+`basic` username and password are a service's client credentials for `/service-tokens`, not a
+user's login. `npx nx run postman:generate` turns the specs into Postman collections. Both are
+covered in [Swagger UI and Postman](docs/swagger-and-postman.md).
 
 ### UIs
 

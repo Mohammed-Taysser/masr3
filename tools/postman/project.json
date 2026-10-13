@@ -1,0 +1,24 @@
+{
+  "name": "postman",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/postman/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "generate": {
+      "executor": "nx:run-commands",
+      "outputStyle": "static",
+      "options": {
+        "command": "TS_NODE_PROJECT=tools/postman/tsconfig.json ts-node tools/postman/src/generate-postman-collections.ts"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "tsc --noEmit -p {projectRoot}/tsconfig.json"
+      }
+    }
+  }
+}

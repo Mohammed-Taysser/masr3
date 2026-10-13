@@ -179,7 +179,8 @@ All on auth-service, under `http://localhost:7000/api`.
 | `POST /service-tokens`                    | Basic client credentials            | Issues a service token                                                             |
 | `GET /internal/users/:id/contact`         | service token, `USERS_CONTACT_READ` | `{ userId, email, firstName, lastName }` or 404                                    |
 
-Swagger lists the service-only routes under the `internal` tag.
+Swagger lists the service-only routes under the `internal` tag. Using these from Swagger UI's
+**Authorize** dialog, and from Postman, is covered in [Swagger UI and Postman](swagger-and-postman.md).
 
 ### Examples
 
