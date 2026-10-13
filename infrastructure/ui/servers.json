@@ -26,6 +26,15 @@
       "MaintenanceDB": "trip_db",
       "Username": "trip",
       "SSLMode": "prefer"
+    },
+    "4": {
+      "Name": "audit-db",
+      "Group": "masr3",
+      "Host": "masr3-audit-db",
+      "Port": 5432,
+      "MaintenanceDB": "audit_db",
+      "Username": "audit",
+      "SSLMode": "prefer"
     }
   }
 }

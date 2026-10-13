@@ -30,6 +30,16 @@
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/dist/apps/trip-service/**/*.js"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Attach audit-service (9232)",
+      "port": 9232,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/apps/audit-service/**/*.js"]
     }
   ],
   "compounds": [

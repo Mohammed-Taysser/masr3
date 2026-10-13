@@ -112,6 +112,36 @@ services:
     networks:
       - masr3-network
 
+  audit-db:
+    image: postgres:16-alpine
+    container_name: masr3-audit-db
+    restart: unless-stopped
+
+    env_file:
+      - ./apps/audit-service/db.env
+
+    # Server and container clock in UTC; timestamptz values are stored as UTC regardless.
+    environment:
+      TZ: UTC
+
+    command: ['postgres', '-c', 'timezone=UTC', '-c', 'log_timezone=UTC']
+
+    ports:
+      - '41003:5432'
+
+    volumes:
+      - masr3_audit_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - masr3-network
+
   # ========================================
   # PgBouncer
   # ========================================
@@ -325,6 +355,9 @@ volumes:
 
   masr3_trip_db_data:
     name: masr3_trip_db_data
+
+  masr3_audit_db_data:
+    name: masr3_audit_db_data
 
   masr3_kafka_data:
     name: masr3_kafka_data
