@@ -8,7 +8,7 @@ proposes a fare, drivers accept it or counter-offer, and the customer picks one 
 
 It is an Nx monorepo of **five NestJS services** (`auth-service`, `notification-service`,
 `trip-service`, `audit-service` and `vehicle-service`) plus a shared `libs` project. **Docker runs only the infrastructure**: one
-Postgres per service behind pgbouncer, Kafka with kafka-ui, Redis with bull-board, pgAdmin and
+Postgres per service behind pgbouncer, Kafka with kafka-ui, Redis with bull-board and RedisInsight, pgAdmin and
 Mailhog. The services run on the host through Nx. Package manager: **pnpm**.
 
 > This README and `docs/` describe **what exists on `main`**. Planned work is in each service
@@ -153,7 +153,7 @@ Useful individual targets:
 | `audit-service`        | 7003 | 41003    | 9232      |
 | `vehicle-service`      | 7004 | 41004    | 9233      |
 
-pgbouncer 41500, Kafka 42000 (kafka-ui 42001), pgAdmin 43000, Redis 44000 (bull-board 44001),
+pgbouncer 41500, Kafka 42000 (kafka-ui 42001), pgAdmin 43000, Redis 44000 (bull-board 44001, RedisInsight 44002),
 Mailhog SMTP 45000 (web UI 45001). The full map and the naming rules are in
 [infrastructure](docs/infrastructure.md#names-and-ports).
 
@@ -298,9 +298,10 @@ covered in [Swagger UI and Postman](docs/swagger-and-postman.md).
 
 ### UIs
 
-| UI         | URL                      | Shows                                                     |
-| ---------- | ------------------------ | --------------------------------------------------------- |
-| pgAdmin    | `http://localhost:43000` | every database, pre-registered                            |
-| kafka-ui   | `http://localhost:42001` | topics, messages, consumer groups                         |
-| bull-board | `http://localhost:44001` | BullMQ queues: scheduled, delayed, completed, failed jobs |
-| Mailhog    | `http://localhost:45001` | every email sent in development                           |
+| UI           | URL                      | Shows                                                     |
+| ------------ | ------------------------ | --------------------------------------------------------- |
+| pgAdmin      | `http://localhost:43000` | every database, pre-registered                            |
+| kafka-ui     | `http://localhost:42001` | topics, messages, consumer groups                         |
+| bull-board   | `http://localhost:44001` | BullMQ queues: scheduled, delayed, completed, failed jobs |
+| RedisInsight | `http://localhost:44002` | raw Redis keys, memory, slow log, a CLI                   |
+| Mailhog      | `http://localhost:45001` | every email sent in development                           |

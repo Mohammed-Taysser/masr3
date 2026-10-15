@@ -27,6 +27,7 @@ flowchart TB
     kafkaui[kafka-ui :42001]
     redis[(Redis :44000)]
     bullboard[bull-board :44001]
+    redisinsight[RedisInsight :44002]
     pgadmin[pgAdmin :43000]
     mailhog[Mailhog SMTP :45000, UI :45001]
   end
@@ -45,6 +46,7 @@ flowchart TB
   notification -->|SMTP| mailhog
   kafkaui --> kafka
   bullboard --> redis
+  redisinsight --> redis
   pgadmin --> authdb & notificationdb & tripdb & auditdb & vehicledb
 ```
 
@@ -64,10 +66,11 @@ default.
 | 41500 | pgbouncer      | `pgbouncer`=41500                                                                               |
 | 42000 | Messaging      | `kafka` (host listener)=42000, `kafka-ui`=42001                                                 |
 | 43000 | DB / infra UI  | `pgadmin`=43000                                                                                 |
-| 44000 | Queues         | `redis`=44000, `bull-board`=44001                                                               |
+| 44000 | Queues         | `redis`=44000, `bull-board`=44001, `redis-insight`=44002                                         |
 | 45000 | Dev-only tools | `mailhog` SMTP=45000, web UI=45001                                                              |
 
-- A UI sits next to the thing it shows: kafka 42000 → kafka-ui 42001, redis 44000 → bull-board 44001.
+- A UI sits next to the thing it shows: kafka 42000 → kafka-ui 42001, redis 44000 → bull-board 44001
+  and RedisInsight 44002.
 - Databases are numbered in the order they were added; the next service takes 41005.
 - Apps: auth-service 7000, notification-service 7001, trip-service 7002, audit-service 7003,
   vehicle-service 7004. Node inspectors: 9229, 9230, 9231, 9232, 9233 (each serve target's
@@ -158,6 +161,9 @@ BullMQ needs: jobs survive a restart and are never evicted.
 - Completed jobs are kept up to the last 100 per queue, failed ones up to 500.
 - **bull-board** (`http://localhost:44001`) shows every queue. It discovers queues only when it
   starts, so after a new queue appears: `docker compose up -d --no-deps --force-recreate bull-board`.
+- **RedisInsight** (`http://localhost:44002`) browses Redis below the queues: raw keys
+  (`bull:<queue>:*`), memory, the slow log and a CLI. The `masr3-redis` connection is
+  preconfigured. For jobs, bull-board is easier.
 
 ## Mail
 

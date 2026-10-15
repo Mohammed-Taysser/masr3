@@ -362,6 +362,32 @@ services:
     networks:
       - masr3-network
 
+  # Browses Redis below the queue level: raw keys, memory, slow log, a CLI.
+  # The connection to masr3-redis is preconfigured; jobs are easier in bull-board.
+  redis-insight:
+    image: redis/redisinsight:3.8.0
+    container_name: masr3-redis-insight
+    restart: unless-stopped
+
+    environment:
+      RI_REDIS_HOST: masr3-redis
+      RI_REDIS_PORT: 6379
+      RI_REDIS_ALIAS: masr3-redis
+      RI_ACCEPT_TERMS_AND_CONDITIONS: 'true'
+
+    ports:
+      - '44002:5540'
+
+    volumes:
+      - masr3_redisinsight_data:/data
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    networks:
+      - masr3-network
+
   # ========================================
   # Dev-only tools
   # ========================================
@@ -406,6 +432,9 @@ volumes:
 
   masr3_redis_data:
     name: masr3_redis_data
+
+  masr3_redisinsight_data:
+    name: masr3_redisinsight_data
 
 # ========================================
 # Shared Network
