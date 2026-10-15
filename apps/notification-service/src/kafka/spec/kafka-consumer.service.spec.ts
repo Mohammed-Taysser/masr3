@@ -7,7 +7,7 @@ import {
   TripKafkaTopic,
   TripStatusEnum,
   TripTypeEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuthEventsHandler from '../../modules/events/auth-events.handler';
 import TripEventsHandler from '../../modules/events/trip-events.handler';
@@ -170,7 +170,9 @@ describe('KafkaConsumerService', () => {
       await service.onModuleInit();
 
       expect(consumer.subscribe).toHaveBeenCalledWith({
-        topics: Object.values(AuthKafkaTopic),
+        topics: Object.values(AuthKafkaTopic).filter(
+          (topic) => topic !== AuthKafkaTopic.USER_CHANGED,
+        ),
         fromBeginning: true,
       });
       expect(consumer.subscribe).toHaveBeenCalledWith({

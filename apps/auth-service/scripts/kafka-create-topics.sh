@@ -23,6 +23,7 @@ TOPICS=(
   "auth.user-change-password"
   "auth.password-reset-requested"
   "auth.password-reset-completed"
+  "auth.user-changed"
 )
 
 # The password-reset event carries the raw reset token. Keep it in the log no

@@ -86,6 +86,14 @@
         "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/database/seeds/seed-users.ts"
       }
     },
+    "users:publish-snapshots": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["migrate"],
+      "outputStyle": "static",
+      "options": {
+        "command": "TS_NODE_PROJECT=apps/auth-service/tsconfig.app.json TS_NODE_BASEURL=\"$PWD\" ts-node -r tsconfig-paths/register apps/auth-service/src/modules/users/publish-user-snapshots.ts"
+      }
+    },
     "generate-signing-key": {
       "executor": "nx:run-commands",
       "outputStyle": "static",

@@ -13,24 +13,30 @@ import {
 } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 
+import { dayjs } from '@masr3/libs/date';
 import {
   ANONYMOUS_AUDIT_ACTOR,
   AuditActionEnum,
   AuditActor,
   AuditEntityTypeEnum,
+  AuthKafkaTopic,
   buildAuditChanges,
   buildUserAuditActor,
-  dayjs,
-} from '@masr3/libs';
+  UserChangeEnum,
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
+import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
 import AuditRecorderService from '../audit/audit-recorder.service';
+import { OutboxEventMap } from '../../kafka/kafka.interface';
 
 import UserEntity from './entities/user.entity';
 import CreateUserDto from './dto/create-user.dto';
 import { PasswordResetTokenOptions } from './users.interface';
 import UpdateUserDto from './dto/update-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';
-import { USER_AUDITED_FIELDS } from './users.constant';
+import { USER_AUDITED_FIELDS, USER_SNAPSHOT_FIELDS } from './users.constant';
+import { buildUserChangedEvent } from './user-changed.event';
 
 @Injectable()
 class UsersService {
@@ -39,21 +45,17 @@ class UsersService {
     private readonly userRepository: Repository<UserEntity>,
     private readonly dataSource: DataSource,
     private readonly auditRecorder: AuditRecorderService,
+    private readonly outboxService: OutboxService<OutboxEventMap>,
   ) {}
 
-  async findAll(query: ListUsersQueryDto) {
-    const { page, limit, sortBy, sortOrder } = query;
-
+  async findAll(query: ListUsersQueryDto): Promise<Paginated<UserEntity>> {
     const [items, total] = await this.userRepository.findAndCount({
       where: this.prepareListWhere(query),
-      order: {
-        [sortBy]: sortOrder,
-      },
-      skip: (page - 1) * limit,
-      take: limit,
+      order: { [query.sortBy]: query.sortOrder, id: query.sortOrder },
+      ...paginationWindow(query),
     });
 
-    return this.buildPaginationResponse(items, total, page, limit);
+    return paginate(items, total, query);
   }
 
   // An admin creating an account.
@@ -155,6 +157,8 @@ class UsersService {
         changes: buildAuditChanges(user, null, USER_AUDITED_FIELDS),
         metadata: null,
       });
+
+      await this.publishChanged(manager, user, UserChangeEnum.DELETED);
 
       return user;
     });
@@ -301,6 +305,8 @@ class UsersService {
         metadata: null,
       });
 
+      await this.publishChanged(manager, user, UserChangeEnum.CREATED);
+
       return user;
     });
   }
@@ -329,8 +335,25 @@ class UsersService {
         metadata,
       });
 
+      if (buildAuditChanges(before, after, USER_SNAPSHOT_FIELDS)) {
+        await this.publishChanged(manager, after, UserChangeEnum.UPDATED);
+      }
+
       return after;
     });
+  }
+
+  private async publishChanged(
+    manager: EntityManager,
+    user: UserEntity,
+    change: UserChangeEnum,
+  ): Promise<void> {
+    await this.outboxService.enqueue(
+      manager,
+      AuthKafkaTopic.USER_CHANGED,
+      buildUserChangedEvent(user, change),
+      String(user.id),
+    );
   }
 
   private static async lockOrFail(
@@ -384,25 +407,6 @@ class UsersService {
         email: ILike(searchPattern),
       },
     ];
-  }
-
-  private buildPaginationResponse(
-    items: UserEntity[],
-    total: number,
-    page: number,
-    limit: number,
-  ) {
-    return {
-      items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPreviousPage: page > 1,
-      },
-    };
   }
 }
 

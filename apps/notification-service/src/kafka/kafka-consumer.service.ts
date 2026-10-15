@@ -14,15 +14,20 @@ import {
   AuthKafkaTopic,
   TripEventMap,
   TripKafkaTopic,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuthEventsHandler from '../modules/events/auth-events.handler';
 import TripEventsHandler from '../modules/events/trip-events.handler';
 import KafkaEventDto from '../modules/events/dto/kafka-event.dto';
 import NotifierService from '../modules/notification/notifier.service';
-import { CONSUMED_EVENT_DTOS } from './kafka.constant';
+import {
+  CONSUMED_AUTH_TOPICS,
+  CONSUMED_EVENT_DTOS,
+  ConsumedAuthKafkaTopic,
+} from './kafka.constant';
 
-type ConsumedEventMap = AuthEventMap & TripEventMap;
+type ConsumedEventMap = Pick<AuthEventMap, ConsumedAuthKafkaTopic> &
+  TripEventMap;
 
 type TopicHandlers = {
   [Topic in keyof ConsumedEventMap]: (
@@ -86,7 +91,7 @@ class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     // delivered. Trip events start at the latest offset, so subscribing to the
     // topic for the first time doesn't email every past trip.
     await this.consumer.subscribe({
-      topics: Object.values(AuthKafkaTopic),
+      topics: CONSUMED_AUTH_TOPICS,
       fromBeginning: true,
     });
     await this.consumer.subscribe({

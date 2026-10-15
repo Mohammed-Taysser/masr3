@@ -20,7 +20,7 @@ flowchart LR
   H -->|intents| N[Notifier]
   N -->|contact| A[auth-service]
   N --> DB[(notification-db)]
-  N --> Q[BullMQ: NOTIFICATION-EMAIL, NOTIFICATION-IN-APP]
+  N --> Q[BullMQ: notification-email, notification-in-app]
   Q --> P[Delivery processors]
   P -->|SMTP| M[Mailhog in dev]
   P -->|inbox| DB
@@ -192,7 +192,7 @@ sequenceDiagram
 - **Secrets** (the password-reset link) travel only in the job, which is removed on completion;
   they never reach the database or bull-board's completed list. A job lost before it ran can't
   be rebuilt, so the sweep marks such a delivery FAILED and the user asks again.
-- **Sweep:** a `NOTIFICATION-DELIVERY-SWEEP` job scheduler re-queues QUEUED deliveries older
+- **Sweep:** a `notification-delivery-sweep` job scheduler re-queues QUEUED deliveries older
   than two minutes whose job never reached Redis.
 - **Providers:** `EmailProvider` (nodemailer, with attachments streamed from their URLs),
   `InAppProvider` (writes the inbox fields), `LogProvider` for SMS, WhatsApp and push until a
@@ -252,6 +252,9 @@ Someone else's item answers `404`. Security notifications ignore the switches.
 | → COMPLETED                      | TRIP_RECEIPT to the customer                                     |
 | → CANCELLED after acceptance     | TRIP_CANCELLED to the other party (both when an admin cancelled) |
 | → EXPIRED                        | TRIP_EXPIRED to the customer                                     |
+
+`auth.user-changed` is not subscribed: it is for services that keep a copy of users
+(`CONSUMED_AUTH_TOPICS` in `kafka/kafka.constant.ts` leaves it out).
 
 ## Planned
 

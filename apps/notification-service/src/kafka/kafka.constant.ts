@@ -1,6 +1,6 @@
 import { ClassConstructor } from 'class-transformer';
 
-import { AuthKafkaTopic, TripKafkaTopic } from '@masr3/libs';
+import { AuthKafkaTopic, TripKafkaTopic } from '@masr3/libs/kafka';
 
 import AuthEventDto from '../modules/events/dto/auth-event.dto';
 import KafkaEventDto from '../modules/events/dto/kafka-event.dto';
@@ -8,10 +8,22 @@ import PasswordResetRequestedEventDto from '../modules/events/dto/password-reset
 import TripStatusChangedEventDto from '../modules/events/dto/trip-status-changed-event.dto';
 import UserLoggedInEventDto from '../modules/events/dto/user-logged-in-event.dto';
 
+// auth.user-changed is for services that keep a copy of users; nothing here
+// is notified about it, so it is not consumed.
+type ConsumedAuthKafkaTopic = Exclude<
+  AuthKafkaTopic,
+  AuthKafkaTopic.USER_CHANGED
+>;
+
+const CONSUMED_AUTH_TOPICS = Object.values(AuthKafkaTopic).filter(
+  (topic): topic is ConsumedAuthKafkaTopic =>
+    topic !== AuthKafkaTopic.USER_CHANGED,
+);
+
 // The DTO each consumed topic is validated against before its handler runs.
 // Typed by topic: a topic added to an enum without a DTO here does not compile.
 const CONSUMED_EVENT_DTOS: Record<
-  AuthKafkaTopic | TripKafkaTopic,
+  ConsumedAuthKafkaTopic | TripKafkaTopic,
   ClassConstructor<KafkaEventDto>
 > = {
   [AuthKafkaTopic.USER_REGISTER]: AuthEventDto,
@@ -23,4 +35,5 @@ const CONSUMED_EVENT_DTOS: Record<
   [TripKafkaTopic.STATUS_CHANGED]: TripStatusChangedEventDto,
 };
 
-export { CONSUMED_EVENT_DTOS };
+export { CONSUMED_AUTH_TOPICS, CONSUMED_EVENT_DTOS };
+export type { ConsumedAuthKafkaTopic };

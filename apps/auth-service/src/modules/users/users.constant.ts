@@ -11,4 +11,13 @@ const USER_AUDITED_FIELDS: readonly (keyof UserEntity & string)[] = [
   'tokenVersion',
 ];
 
-export { USER_AUDITED_FIELDS };
+// The fields auth.user-changed carries. A write that changes none of them
+// (a login, a password change) publishes nothing.
+const USER_SNAPSHOT_FIELDS: readonly (keyof UserEntity & string)[] = [
+  'firstName',
+  'lastName',
+  'role',
+  'isActive',
+];
+
+export { USER_AUDITED_FIELDS, USER_SNAPSHOT_FIELDS };

@@ -5,7 +5,8 @@ RS256 tokens locally against its public keys (JWKS).
 
 - **Port** 7000, database `auth-db` (41000), Swagger at `http://localhost:7000/api/docs`.
 - **Owns:** users (roles CUSTOMER, DRIVER, ADMIN), passwords, access / refresh / service tokens,
-  signing keys, the service-client registry, and the outbox of its audit events.
+  signing keys, the service-client registry, and the outbox of its audit and
+  `auth.user-changed` events.
 - **Does not own:** sending email. It publishes `auth.*` events and notification-service sends.
 
 Token types, claims, scopes, rotation and failure behaviour are covered in depth in
@@ -20,9 +21,11 @@ flowchart LR
   auth -->|via pgbouncer :41500| db[(auth-db)]
   auth -->|best-effort publish| topics{{auth.* topics}}
   topics --> notification[notification-service]
-  auth -->|BullMQ AUTH-OUTBOX-RELAY| redis[(Redis :44000)]
+  auth -->|BullMQ auth-outbox-relay| redis[(Redis :44000)]
   auth -->|outbox relay| audit{{audit.action-recorded}}
   audit --> auditService[audit-service]
+  auth -->|outbox relay| changed{{auth.user-changed}}
+  changed -->|copy of drivers| vehicle[vehicle-service]
   notification -->|service token: /internal/users/:id/contact| auth
   notification -->|POST /service-tokens, Basic secret| auth
   trip[trip-service] -->|GET /.well-known/jwks.json, cached| auth
@@ -150,6 +153,9 @@ sequenceDiagram
   S->>S: changes = buildAuditChanges(before, after, USER_AUDITED_FIELDS)
   S->>UA: record(manager, { action, entity, actor, changes, metadata })
   UA->>DB: INSERT outbox_events (audit envelope)
+  opt first, last name, role or isActive changed (or created, deleted)
+    S->>DB: INSERT outbox_events (auth.user-changed snapshot)
+  end
   S->>DB: COMMIT
   R->>DB: every OUTBOX_POLL_INTERVAL_MS, pending rows
   R->>K: send batch keyed USER-id, then SET publishedAt
@@ -166,9 +172,11 @@ sequenceDiagram
   audit trail**, because they are not in the allow-list.
 - Actors: the signed-in user (`buildUserAuditActor`), the admin on `/users` routes
   (`@CurrentUser()`), or `ANONYMOUS_AUDIT_ACTOR` for forgot-password.
-- The relay is a copy of trip-service's with its own names: queue `AUTH-OUTBOX-RELAY`,
-  scheduler `AUTH-OUTBOX-RELAY-EVERY-INTERVAL`, advisory lock `7000001`. Redis is shared, so
-  a queue named `OUTBOX-RELAY` would collide with trip-service's. See
+- The same transaction also enqueues `auth.user-changed` (`UsersService.publishChanged`) when
+  a field in `USER_SNAPSHOT_FIELDS` changed, so logins and password changes publish nothing.
+- The outbox is the shared one from `@masr3/libs`, on queue `auth-outbox-relay` with advisory
+  lock `7000001` (env `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID`). Redis is shared, so a
+  queue without the `auth-` prefix could collide with another service's. See
   [the outbox pattern](../patterns/transactional-outbox.md).
 
 ### Service-to-service calls
@@ -207,17 +215,24 @@ from `@masr3/libs`. The guard fetches `GET /api/.well-known/jwks.json` once, cac
 
 ## Events
 
-All published best-effort, keyed by `userId`. Contracts: `AuthEventMap` in
-`libs/src/lib/kafka/auth/`.
+Keyed by `userId`. Contracts: `AuthEventMap` in `libs/src/lib/kafka/auth/`. All are published
+best-effort except `auth.user-changed`, which goes through the outbox.
 
-| Topic                           | Published by       | notification-service sends     |
-| ------------------------------- | ------------------ | ------------------------------ |
-| `auth.user-register`            | `register()`       | welcome email                  |
-| `auth.user-logged-in`           | `login()`          | new sign-in alert              |
-| `auth.user-logged-out`          | `logout()`         | nothing                        |
-| `auth.user-change-password`     | `changePassword()` | "your password was changed"    |
-| `auth.password-reset-requested` | `forgetPassword()` | the reset email                |
-| `auth.password-reset-completed` | `resetPassword()`  | "your password has been reset" |
+| Topic                           | Published by                                                                     | notification-service sends     |
+| ------------------------------- | -------------------------------------------------------------------------------- | ------------------------------ |
+| `auth.user-register`            | `register()`                                                                     | welcome email                  |
+| `auth.user-logged-in`           | `login()`                                                                        | new sign-in alert              |
+| `auth.user-logged-out`          | `logout()`                                                                       | nothing                        |
+| `auth.user-change-password`     | `changePassword()`                                                               | "your password was changed"    |
+| `auth.password-reset-requested` | `forgetPassword()`                                                               | the reset email                |
+| `auth.password-reset-completed` | `resetPassword()`                                                                | "your password has been reset" |
+| `auth.user-changed`             | every user write that changes a name, role or `isActive`, plus create and delete | nothing (not subscribed)       |
+
+`auth.user-changed` carries the user's whole state (`userId`, `firstName`, `lastName`, `role`,
+`isActive`) and the `change` (`CREATED`, `UPDATED`, `DELETED`), never a diff, so a consumer that
+keeps a copy only overwrites or deletes its row. vehicle-service keeps its drivers this way.
+Users written before the topic existed are published once with
+`npx nx run auth-service:users:publish-snapshots`.
 
 **Audit events** go to `audit.action-recorded` through the outbox, keyed `USER-<id>`, consumed
 by [audit-service](audit-service.md), all with `entityType` `USER`: `REGISTERED`,
@@ -227,8 +242,10 @@ by [audit-service](audit-service.md), all with `entityType` `USER`: `REGISTERED`
 
 ## Planned
 
-- **Move `auth.*` onto the outbox.** The outbox exists now (for audit events); routing the
-  domain events through it too would stop a Kafka outage from losing a password-reset email.
+- **Move the other `auth.*` events onto the outbox.** Audit events and `auth.user-changed`
+  already use it; routing the rest through it too would stop a Kafka outage from losing a
+  password-reset email.
 - **Admin-created users** (`POST /users`) are saved with the password as given: it is not
   hashed, so such a user cannot log in. Hash it like `register` does.
-- **Driver profiles and vehicles** may live here or in a new service; undecided.
+- **Driver profiles** (licence, documents) may live here or in vehicle-service; undecided.
+  Vehicles live in [vehicle-service](vehicle-service.md).

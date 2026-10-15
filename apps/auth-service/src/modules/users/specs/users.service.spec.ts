@@ -6,22 +6,26 @@ import {
   Repository,
 } from 'typeorm';
 
+import { UserRoleEnum } from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 import {
   ANONYMOUS_AUDIT_ACTOR,
   AuditActionEnum,
   AuditActor,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
+  AuthKafkaTopic,
   buildAuditChanges,
-  dayjs,
-  UserRoleEnum,
-} from '@masr3/libs';
+  UserChangeEnum,
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
 
 import CreateUserDto from '../dto/create-user.dto';
 import ListUsersQueryDto from '../dto/list-users-query.dto';
 import UpdateUserDto from '../dto/update-user.dto';
 import UserEntity from '../entities/user.entity';
 import AuditRecorderService from '../../audit/audit-recorder.service';
+import { OutboxEventMap } from '../../../kafka/kafka.interface';
 import { USER_AUDITED_FIELDS } from '../users.constant';
 import UsersService from '../users.service';
 
@@ -35,6 +39,7 @@ describe('UsersService', () => {
   let manager: jest.Mocked<EntityManager>;
   let dataSource: jest.Mocked<DataSource>;
   let auditRecorder: jest.Mocked<AuditRecorderService>;
+  let outboxService: jest.Mocked<OutboxService<OutboxEventMap>>;
 
   const user = {
     id: 1,
@@ -154,7 +159,16 @@ describe('UsersService', () => {
       record: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<AuditRecorderService>;
 
-    service = new UsersService(repository, dataSource, auditRecorder);
+    outboxService = {
+      enqueue: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<OutboxService<OutboxEventMap>>;
+
+    service = new UsersService(
+      repository,
+      dataSource,
+      auditRecorder,
+      outboxService,
+    );
   });
 
   afterEach(() => {
@@ -177,6 +191,7 @@ describe('UsersService', () => {
         where: [{}],
         order: {
           createdAt: 'DESC',
+          id: 'DESC',
         },
         skip: 10,
         take: 10,
@@ -367,6 +382,7 @@ describe('UsersService', () => {
         expect.objectContaining({
           order: {
             email: 'ASC',
+            id: 'ASC',
           },
           skip: 40,
           take: 20,
@@ -1055,6 +1071,71 @@ describe('UsersService', () => {
       await expect(service.clearPasswordResetToken(999)).rejects.toThrow(
         new NotFoundException('User with ID 999 not found'),
       );
+    });
+  });
+
+  describe('auth.user-changed', () => {
+    const expectPublished = (snapshot: UserEntity, change: UserChangeEnum) => {
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        manager,
+        AuthKafkaTopic.USER_CHANGED,
+        {
+          userId: snapshot.id,
+          firstName: snapshot.firstName,
+          lastName: snapshot.lastName,
+          role: snapshot.role,
+          isActive: snapshot.isActive,
+          change,
+        },
+        String(snapshot.id),
+      );
+    };
+
+    it('publishes CREATED when a user is created', async () => {
+      manager.findOneBy.mockResolvedValue(null);
+      manager.create.mockReturnValue(user as never);
+      manager.save.mockResolvedValue(user);
+
+      await service.create(createDto, adminActor);
+
+      expectPublished(user, UserChangeEnum.CREATED);
+    });
+
+    it('publishes UPDATED with the new state when the name changes', async () => {
+      const renamed = { ...user, lastName: 'Renamed' } as UserEntity;
+
+      mockUpdateQuery();
+      mockLockedRow(user, renamed);
+
+      await service.update(1, { lastName: 'Renamed' }, adminActor);
+
+      expectPublished(renamed, UserChangeEnum.UPDATED);
+    });
+
+    it('publishes UPDATED when the user is deactivated', async () => {
+      const deactivated = { ...user, isActive: false } as UserEntity;
+
+      mockLockedRow(user, deactivated);
+
+      await service.setActive(1, false, adminActor);
+
+      expectPublished(deactivated, UserChangeEnum.UPDATED);
+    });
+
+    it('publishes nothing when no snapshot field changed', async () => {
+      mockLockedRow(user, { ...user, tokenVersion: 1 } as UserEntity);
+
+      await service.logout(1, userActor);
+
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('publishes DELETED with the last state when a user is removed', async () => {
+      manager.findOne.mockResolvedValue(user);
+
+      await service.remove(1, adminActor);
+
+      expectPublished(user, UserChangeEnum.DELETED);
     });
   });
 });
