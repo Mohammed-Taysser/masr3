@@ -22,7 +22,7 @@ import RegisterDto from '../dto/register.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import PasswordService from '../services/password.service';
 import TokenService from '../services/token.service';
-import KafkaProducerService from '../../../kafka/kafka-producer.service';
+import KafkaPublisherService from '../../../kafka/kafka-publisher.service';
 import UsersService from '../../users/users.service';
 import UserEntity from '../../users/entities/user.entity';
 
@@ -32,7 +32,7 @@ describe('AuthService', () => {
   let usersService: jest.Mocked<UsersService>;
   let passwordService: jest.Mocked<PasswordService>;
   let tokenService: jest.Mocked<TokenService>;
-  let kafkaProducer: jest.Mocked<KafkaProducerService>;
+  let kafkaPublisher: jest.Mocked<KafkaPublisherService>;
   let tokenVerifier: jest.Mocked<TokenVerifierService>;
 
   const user = {
@@ -90,9 +90,9 @@ describe('AuthService', () => {
       getResetTokenExpiry: jest.fn(),
     } as unknown as jest.Mocked<TokenService>;
 
-    kafkaProducer = {
+    kafkaPublisher = {
       publish: jest.fn().mockResolvedValue(undefined),
-    } as unknown as jest.Mocked<KafkaProducerService>;
+    } as unknown as jest.Mocked<KafkaPublisherService>;
 
     tokenVerifier = {
       verify: jest.fn(),
@@ -102,7 +102,7 @@ describe('AuthService', () => {
       usersService,
       passwordService,
       tokenService,
-      kafkaProducer,
+      kafkaPublisher,
       tokenVerifier,
     );
   });
@@ -142,14 +142,8 @@ describe('AuthService', () => {
 
       expect(result).toEqual({ ...tokens, user });
 
-      expect(kafkaProducer.publish).toHaveBeenCalledWith(
-        AuthKafkaTopic.USER_REGISTER,
-        expect.objectContaining({
-          userId: user.id,
-          email: user.email,
-          firstName: user.firstName,
-        }),
-      );
+      // auth.user-register goes through the outbox, inside usersService.register.
+      expect(kafkaPublisher.publish).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when email already exists', async () => {
@@ -396,7 +390,7 @@ describe('AuthService', () => {
 
       // The raw token, not the stored hash: only the raw token makes a
       // working reset link.
-      expect(kafkaProducer.publish).toHaveBeenCalledWith(
+      expect(kafkaPublisher.publish).toHaveBeenCalledWith(
         AuthKafkaTopic.PASSWORD_RESET_REQUESTED,
         expect.objectContaining({
           userId: user.id,
@@ -406,7 +400,7 @@ describe('AuthService', () => {
         }),
       );
 
-      expect(kafkaProducer.publish).not.toHaveBeenCalledWith(
+      expect(kafkaPublisher.publish).not.toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ tokenHash: expect.anything() }),
       );
@@ -429,7 +423,7 @@ describe('AuthService', () => {
 
       expect(tokenService.createResetToken).not.toHaveBeenCalled();
       expect(usersService.setPasswordResetToken).not.toHaveBeenCalled();
-      expect(kafkaProducer.publish).not.toHaveBeenCalled();
+      expect(kafkaPublisher.publish).not.toHaveBeenCalled();
     });
   });
 
@@ -497,7 +491,7 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('logs the user out as their own actor and publishes a logout event', async () => {
+    it('logs the user out as their own actor, leaving the event to the outbox', async () => {
       usersService.findByIdOrFail.mockResolvedValue(user);
       usersService.logout.mockResolvedValue();
 
@@ -505,10 +499,7 @@ describe('AuthService', () => {
 
       expect(usersService.logout).toHaveBeenCalledWith(user.id, userActor);
 
-      expect(kafkaProducer.publish).toHaveBeenCalledWith(
-        AuthKafkaTopic.USER_LOGGED_OUT,
-        expect.objectContaining({ userId: user.id }),
-      );
+      expect(kafkaPublisher.publish).not.toHaveBeenCalled();
 
       expect(result).toEqual({
         message: 'Logged out successfully',

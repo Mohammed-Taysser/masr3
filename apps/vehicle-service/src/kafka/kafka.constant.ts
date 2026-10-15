@@ -1,19 +1,22 @@
-import { ClassConstructor } from 'class-transformer';
+import {
+  AuthEventMap,
+  AuthKafkaTopic,
+  KafkaEventDtos,
+} from '@masr3/libs/kafka';
 
-import { AuthKafkaTopic } from '@masr3/libs/kafka';
-
-import KafkaEventDto from '../modules/driver/dto/kafka-event.dto';
 import UserChangedEventDto from '../modules/driver/dto/user-changed-event.dto';
+
+// Each service has its own relay queue: Redis is shared.
+const VEHICLE_OUTBOX_RELAY_QUEUE = 'vehicle-outbox-relay';
 
 type ConsumedKafkaTopic = AuthKafkaTopic.USER_CHANGED;
 
 // The DTO each consumed topic is validated against before its handler runs.
-const CONSUMED_EVENT_DTOS: Record<
-  ConsumedKafkaTopic,
-  ClassConstructor<KafkaEventDto>
+const CONSUMED_EVENT_DTOS: KafkaEventDtos<
+  Pick<AuthEventMap, ConsumedKafkaTopic>
 > = {
   [AuthKafkaTopic.USER_CHANGED]: UserChangedEventDto,
 };
 
-export { CONSUMED_EVENT_DTOS };
+export { CONSUMED_EVENT_DTOS, VEHICLE_OUTBOX_RELAY_QUEUE };
 export type { ConsumedKafkaTopic };

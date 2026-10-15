@@ -6,36 +6,50 @@ How masr3 authenticates users and services, how to use it in a service, and how 
 key that never leaves it. Every service, auth-service included, verifies tokens **locally** against
 the public keys in auth-service's JWKS. No service calls auth-service to check a user's token.
 
-```text
-             login / register / refresh                    GET /api/.well-known/jwks.json
-  client  ───────────────────────────────►  auth-service  ◄──────────────────────────────┐
-     │      access token + refresh token    (private key)                                │
-     │                                           ▲                                       │
-     │  Authorization: Bearer <access token>     │ POST /api/service-tokens       trip-service,
-     └──────────────────────────────────────►  any service  (Basic client creds)  any verifier
-                                             verifies locally ─────────────────────────┘
+```mermaid
+flowchart LR
+  client([Client])
+  auth["auth-service<br/>holds the RS256 private key"]
+  service["Any service<br/>verifies tokens locally"]
+  caller["Calling service<br/>e.g. notification-service"]
+
+  client -->|"1 login, register, refresh"| auth
+  auth -->|"2 access + refresh tokens"| client
+  client -->|"3 Authorization: Bearer access token"| service
+  service -.->|"GET /api/.well-known/jwks.json<br/>public keys, cached"| auth
+  caller -->|"POST /api/service-tokens<br/>Basic client credentials"| auth
+  caller -->|"Bearer service token"| service
 ```
+
+The dotted arrow is the only call a verifier makes to auth-service: fetching the public keys,
+which it caches.
 
 All code is shared from `@masr3/libs/auth` (`libs/src/lib/auth/`). Services only wire it up and configure
 it.
 
 ## Contents
 
-- [Tokens](#tokens)
-- [Who may call what](#who-may-call-what)
-- [Revocation](#revocation)
-- [Endpoints](#endpoints)
-- [Protecting routes in a service](#protecting-routes-in-a-service)
-- [Calling another service](#calling-another-service)
-- [Adding a scope, a client or an internal endpoint](#adding-a-scope-a-client-or-an-internal-endpoint)
-- [Configuration](#configuration)
-- [Setup](#setup)
-- [Key rotation and compromise](#key-rotation-and-compromise)
-- [Client secret rotation and disabling a client](#client-secret-rotation-and-disabling-a-client)
-- [Failure behaviour](#failure-behaviour)
-- [Code map](#code-map)
-- [Tests](#tests)
-- [Limitations and production notes](#limitations-and-production-notes)
+- [Authentication](#authentication)
+  - [Contents](#contents)
+  - [Tokens](#tokens)
+    - [What verification checks](#what-verification-checks)
+  - [Who may call what](#who-may-call-what)
+  - [Revocation](#revocation)
+  - [Endpoints](#endpoints)
+    - [Examples](#examples)
+  - [Protecting routes in a service](#protecting-routes-in-a-service)
+  - [Calling another service](#calling-another-service)
+  - [Adding a scope, a client or an internal endpoint](#adding-a-scope-a-client-or-an-internal-endpoint)
+  - [Configuration](#configuration)
+  - [Setup](#setup)
+  - [Key rotation and compromise](#key-rotation-and-compromise)
+    - [Routine rotation](#routine-rotation)
+    - [Signing-key compromise](#signing-key-compromise)
+  - [Client secret rotation and disabling a client](#client-secret-rotation-and-disabling-a-client)
+  - [Failure behaviour](#failure-behaviour)
+  - [Code map](#code-map)
+  - [Tests](#tests)
+  - [Limitations and production notes](#limitations-and-production-notes)
 
 ## Tokens
 

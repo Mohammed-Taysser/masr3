@@ -119,8 +119,10 @@ A client reconnects to the address the broker **advertises**, which is why there
 
 ```mermaid
 flowchart LR
-  auth[auth-service] -->|best effort| at{{"auth.* sign-in and password (6 topics)"}}
+  auth[auth-service] -->|transactional outbox| at{{"auth.* sign-in and password (5 topics)"}}
   at -->|group notification-service| ns[notification-service]
+  auth -->|best effort, raw token| rr{{auth.password-reset-requested}}
+  rr -->|group notification-service| ns
   auth -->|transactional outbox| uc{{auth.user-changed}}
   uc -->|group vehicle-service, from the beginning| vs[vehicle-service]
   trip[trip-service] -->|transactional outbox| tt{{trip.status-changed}}
@@ -145,7 +147,7 @@ BullMQ needs: jobs survive a restart and are never evicted.
   several instances still share one schedule (trip-service: `trip-outbox-relay`,
   `trip-expiry-sweep`; auth-service: `auth-outbox-relay`; vehicle-service:
   `vehicle-outbox-relay`; notification-service: `notification-delivery-sweep`). The outbox
-  relay's queue name comes from each service's `OUTBOX_RELAY_QUEUE` env variable.
+  relay's queue name is the `queue` each service passes to `OutboxModule.forRoot`.
 - **Queue names are global.** Every service uses this one Redis with BullMQ's default prefix,
   so two services must never share a queue name: the other service's worker would take the jobs.
 - **Delayed jobs** do work at a moment: a stable `jobId` (`trip-<id>`), queued after the

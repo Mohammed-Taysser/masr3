@@ -24,7 +24,6 @@ const validEnv = {
   OUTBOX_POLL_INTERVAL_MS: '1000',
   OUTBOX_BATCH_SIZE: '100',
   OUTBOX_RETENTION_MS: '604800000',
-  OUTBOX_RELAY_QUEUE: 'vehicle-outbox-relay',
   OUTBOX_RELAY_LOCK_ID: '7004001',
 
   AUTH_SERVICE_URL: 'http://localhost:7000/api',
@@ -105,14 +104,5 @@ describe('validate', () => {
 
   it('rejects an unknown NODE_ENV', () => {
     expect(() => validate({ ...validEnv, NODE_ENV: 'staging' })).toThrow();
-  });
-
-  describe('OUTBOX_RELAY_QUEUE', () => {
-    it.each(['TRIP-OUTBOX-RELAY', 'outbox', 'outbox_relay', '-outbox-relay'])(
-      'rejects %p',
-      (OUTBOX_RELAY_QUEUE) => {
-        expect(() => validate({ ...validEnv, OUTBOX_RELAY_QUEUE })).toThrow();
-      },
-    );
   });
 });

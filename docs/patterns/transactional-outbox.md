@@ -17,25 +17,33 @@ no transaction, so the work can fail half-way in either order:
 | Send, then commit to DB | The commit fails or rolls back                | **Phantom event.** Consumers act on a change that never happened. |
 
 Retrying the send in a `catch` doesn't fix the first case: the process can die before it retries.
-auth-service's sign-in and password `auth.*` events are published best-effort and accept the first
-case (see "When not to use it"); its audit events and `auth.user-changed` go through the outbox.
+auth-service's `auth.password-reset-requested` is published best-effort and accepts the first case
+(see "When not to use it"); every other event in masr3 goes through an outbox.
 
 ## The fix
 
 The service never talks to Kafka inside the business transaction. The event is written as a row
 in the **same** transaction as the state change. A separate relay copies rows to Kafka afterwards.
 
-```text
- TripService.transition ── one Postgres transaction ──────────────┐
-   SELECT … FOR UPDATE trips  (lock the row)                      │
-   UPDATE trips               (the state change)                  │ all commit
-   INSERT trip_status_history                                     │ or none
-   INSERT outbox_events       (the event, as a row)               │
- ─────────────────────────────────────────────────────────────────┘
-            ▼  later, separately
- OutboxRelayService (a BullMQ RELAY job every OUTBOX_POLL_INTERVAL_MS)
-   lock → read pending rows by id → send to Kafka → mark publishedAt
-   Kafka fails → rows stay pending, attempts/lastError recorded, retried next tick
+```mermaid
+flowchart TB
+  subgraph tx ["TripService.transition: one Postgres transaction, all commit or none"]
+    direction TB
+    lock["SELECT … FOR UPDATE trips<br/>lock the row"]
+    update["UPDATE trips<br/>the state change"]
+    history["INSERT trip_status_history"]
+    outbox["INSERT outbox_events<br/>the event, as a row"]
+    lock --> update --> history --> outbox
+  end
+
+  subgraph relay ["OutboxRelayService: a BullMQ RELAY job every OUTBOX_POLL_INTERVAL_MS"]
+    direction TB
+    relayLock["advisory lock"] --> read["read pending rows by id"] --> send["send to Kafka"]
+    send -->|sent| published["set publishedAt"]
+    send -->|Kafka fails| pending["rows stay pending,<br/>attempts and lastError recorded,<br/>retried next tick"]
+  end
+
+  tx -.->|later, separately| relay
 ```
 
 The event row exists **if and only if** the state change committed. That one property removes
@@ -43,9 +51,9 @@ both failure cases.
 
 ## The relay, step by step
 
-A BullMQ job scheduler (`<OUTBOX_RELAY_QUEUE>-every-interval`) adds a `RELAY` job to the
-service's `OUTBOX_RELAY_QUEUE` every `OUTBOX_POLL_INTERVAL_MS`, and the relay processor runs each
-one. Each run ("tick") is one Postgres transaction:
+A BullMQ job scheduler (`<queue>-every-interval`) adds a `RELAY` job to the service's relay
+queue (the `queue` passed to `OutboxModule.forRoot`) every `OUTBOX_POLL_INTERVAL_MS`, and the
+relay processor runs each one. Each run ("tick") is one Postgres transaction:
 
 1. **`SELECT pg_try_advisory_xact_lock(OUTBOX_RELAY_LOCK_ID)`.** If it returns false, another
    instance is relaying right now, so this tick does nothing. Only one relay ever publishes at a
@@ -62,13 +70,17 @@ one. Each run ("tick") is one Postgres transaction:
 5. **Purge** rows published more than `OUTBOX_RETENTION_MS` ago.
 
 Ticks don't overlap within an instance: the processor runs with concurrency 1. Across instances
-the advisory lock in step 1 does the same job. The producer
-also helps keep order:
+the advisory lock in step 1 does the same job. The producer (`KafkaProducerService` from
+`@masr3/libs/kafka`, shared by every service) also helps keep order:
 
 - It is idempotent, with one request in flight, so a kafkajs-level retry can't reorder or
   duplicate messages within a partition.
-- trip-service's connects lazily, so the service boots and keeps accepting writes while Kafka is
-  down. auth-service's connects at boot, because its best-effort `auth.*` publishing shares it.
+- It connects lazily, on the first send, so the service boots and keeps accepting writes while
+  Kafka is down. auth-service's one best-effort event goes through the same producer.
+- Each send retries `KAFKA_PRODUCER_RETRIES` (2) times, then fails. The tick holds its
+  transaction open while it sends, so during an outage it records `attempts` / `lastError` and
+  ends instead of waiting. An idempotent kafkajs producer otherwise retries without limit,
+  whatever the client's `retry` says.
 
 ## Guarantees
 
@@ -118,11 +130,19 @@ is shared between clients at transaction boundaries.
 3. **Register the module once, in `AppModule`:**
 
    ```ts
-   OutboxModule.forRoot({ imports: [KafkaModule], producer: KafkaProducerService }),
+   OutboxModule.forRoot({ queue: TRIP_OUTBOX_RELAY_QUEUE }),
    ```
 
-   It is global. `producer` is the service's Kafka producer (copy
-   `kafka/kafka-producer.service.ts`); `queue/queue.module.ts` gives BullMQ its Redis connection.
+   It is global and brings the shared Kafka producer with it. `queue` is the service's relay
+   queue, a constant in `kafka/kafka.constant.ts`; `queue/queue.module.ts` gives BullMQ its Redis
+   connection.
+   - **The queue name must be unique to the service**: lowercase kebab-case with the service
+     prefix (`auth-outbox-relay`, `trip-outbox-relay`, `vehicle-outbox-relay`); `forRoot` throws
+     at boot on anything else (`QUEUE_NAME_PATTERN`). Every service shares one Redis with
+     BullMQ's default prefix, so two services with the same name would share one queue: each
+     worker would take the other's relay jobs.
+   - It is a constant, not env: BullMQ needs the name while the module graph is built, before
+     `ConfigService` exists, and it doesn't vary between environments.
 
 4. **Table and migration:** add `OutboxEventEntity` (from `@masr3/libs`) to `database.module.ts`
    and `data-source.ts`, then `migrate-generate` with the CLI.
@@ -132,12 +152,7 @@ is shared between clients at transaction boundaries.
    a wrong payload a compile error.
 6. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `REDIS_HOST`, `REDIS_PORT`,
    `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`, and the service's own
-   `OUTBOX_RELAY_QUEUE` and `OUTBOX_RELAY_LOCK_ID`.
-   - **The queue name must be unique to the service**: lowercase kebab-case with the service
-     prefix (`auth-outbox-relay`, `trip-outbox-relay`, `vehicle-outbox-relay`); env validation
-     rejects anything else (`QUEUE_NAME_PATTERN`). Every service shares one Redis with BullMQ's default
-     prefix, so two services with the same name would share one queue: each worker would take
-     the other's relay jobs.
+   `OUTBOX_RELAY_LOCK_ID`.
    - **The lock id is the service port plus three digits** (7000001, 7002001, 7004001). Advisory
      locks are per database, so this only matters if two services ever share one, but distinct ids
      cost nothing.
@@ -147,8 +162,10 @@ is shared between clients at transaction boundaries.
 
 ## When not to use it
 
-When a dropped event is acceptable and an extra table isn't worth it. auth-service's sign-in alert
-is an example: if Kafka is down and one "new sign-in" email never goes out, nothing is corrupted.
-auth-service therefore publishes its `auth.*` events directly and logs failures. Use the outbox when a lost or phantom
-event would leave another service, or a user, with the wrong picture of the system: a trip
-accepted, a payment captured.
+When a dropped event is acceptable and the event must not be stored. auth-service's
+`auth.password-reset-requested` is the example: it carries the raw reset token, which the outbox
+would keep in `outbox_events` for the whole retention. If Kafka is down the reset email never goes
+out, the user asks again, and nothing is corrupted, so auth-service publishes it directly and logs
+failures. Use the outbox when a lost or phantom event would leave another service, or a user,
+with the wrong picture of the system: a trip accepted, a payment captured, a "your password was
+changed" notice.

@@ -276,7 +276,8 @@ sequenceDiagram
 ```
 
 The outbox is the shared one from `@masr3/libs` (`OutboxModule.forRoot` in `AppModule`), on
-queue `trip-outbox-relay` with lock id `7002001` (env `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID`).
+queue `trip-outbox-relay` (`TRIP_OUTBOX_RELAY_QUEUE`) with lock id `7002001` (env
+`OUTBOX_RELAY_LOCK_ID`).
 The pattern (why, guarantees, costs) is in
 [`docs/patterns/transactional-outbox.md`](../patterns/transactional-outbox.md). Pending or
 failing events: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER BY id`.

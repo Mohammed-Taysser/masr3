@@ -3,15 +3,14 @@ import { Queue } from 'bullmq';
 import { DataSource, EntityManager, In, IsNull } from 'typeorm';
 
 import { dayjs } from '../../date/dayjs';
+import KafkaProducerService from '../../kafka/kafka-producer.service';
 import OutboxEventEntity from '../entities/outbox-event.entity';
 import OutboxRelayService from '../outbox-relay.service';
 import { OutboxJobEnum } from '../outbox.enum';
-import { OutboxProducer } from '../outbox.interface';
 
 const RETENTION_MS = 604800000;
 
-const config: Record<string, number | string> = {
-  OUTBOX_RELAY_QUEUE: 'example-outbox-relay',
+const config: Record<string, number> = {
   OUTBOX_RELAY_LOCK_ID: 7999001,
   OUTBOX_POLL_INTERVAL_MS: 1000,
   OUTBOX_BATCH_SIZE: 100,
@@ -24,7 +23,7 @@ const outboxRow = (id: number, topic: string, key: string) =>
 describe('OutboxRelayService', () => {
   let relay: OutboxRelayService;
   let manager: jest.Mocked<EntityManager>;
-  let producer: jest.Mocked<OutboxProducer>;
+  let producer: jest.Mocked<KafkaProducerService>;
   let relayQueue: jest.Mocked<Queue>;
 
   const lockResult = (locked: boolean) =>
@@ -47,13 +46,14 @@ describe('OutboxRelayService', () => {
 
     producer = {
       sendBatch: jest.fn(),
-    } as unknown as jest.Mocked<OutboxProducer>;
+    } as unknown as jest.Mocked<KafkaProducerService>;
 
     const configService = {
       getOrThrow: jest.fn((key: string) => config[key]),
     } as unknown as ConfigService;
 
     relayQueue = {
+      name: 'example-outbox-relay',
       upsertJobScheduler: jest.fn(),
     } as unknown as jest.Mocked<Queue>;
 

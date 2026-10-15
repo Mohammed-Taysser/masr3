@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 
-import KafkaProducerService from './kafka-producer.service';
+import { KafkaProducerModule } from '@masr3/libs/kafka';
+
+import KafkaPublisherService from './kafka-publisher.service';
 
 @Module({
-  imports: [ConfigModule],
-  providers: [KafkaProducerService],
-  exports: [KafkaProducerService],
+  imports: [KafkaProducerModule],
+  providers: [KafkaPublisherService],
+  exports: [KafkaPublisherService],
 })
 class KafkaModule {}
 

@@ -1,4 +1,5 @@
 import {
+  BaseAuthEvent,
   EventPayload,
   UserChangedEvent,
   UserChangeEnum,
@@ -20,4 +21,14 @@ function buildUserChangedEvent(
   };
 }
 
-export { buildUserChangedEvent };
+// What notification-service needs to address the user: register, login,
+// logout and the password events all carry it.
+function buildAuthEvent(user: UserEntity): EventPayload<BaseAuthEvent> {
+  return {
+    userId: user.id,
+    email: user.email,
+    firstName: user.firstName,
+  };
+}
+
+export { buildAuthEvent, buildUserChangedEvent };

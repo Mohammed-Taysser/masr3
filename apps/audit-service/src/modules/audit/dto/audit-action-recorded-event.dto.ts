@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsDefined,
   IsInt,
-  IsISO8601,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -15,6 +14,7 @@ import {
   AuditActionEnum,
   AuditActionRecordedEvent,
   AuditChanges,
+  KafkaEventDto,
 } from '@masr3/libs/kafka';
 
 import AuditActorDto from './audit-actor.dto';
@@ -23,14 +23,10 @@ import AuditEntityReferenceDto from './audit-entity-reference.dto';
 // Validates an audit.action-recorded message before it is stored. Anything it
 // rejects can never be inserted, so the consumer skips it instead of retrying
 // it forever. Implementing the contract keeps the two in step at compile time.
-class AuditActionRecordedEventDto implements AuditActionRecordedEvent {
-  @IsString()
-  @IsNotEmpty()
-  eventId: string;
-
-  @IsISO8601({ strict: true })
-  occurredAt: string;
-
+class AuditActionRecordedEventDto
+  extends KafkaEventDto
+  implements AuditActionRecordedEvent
+{
   @IsInt()
   @Min(1)
   schemaVersion: number;

@@ -9,12 +9,7 @@ import {
   TokenUseEnum,
   TokenVerifierService,
 } from '@masr3/libs/auth';
-import {
-  AuthKafkaTopic,
-  BaseAuthEvent,
-  buildUserAuditActor,
-  EventPayload,
-} from '@masr3/libs/kafka';
+import { AuthKafkaTopic, buildUserAuditActor } from '@masr3/libs/kafka';
 
 import ChangePasswordDto from './dto/change-password.dto';
 import ForgotPasswordDto from './dto/forgot-password.dto';
@@ -23,8 +18,9 @@ import RefreshTokenDto from './dto/refresh-token.dto';
 import RegisterDto from './dto/register.dto';
 import ResetPasswordDto from './dto/reset-password.dto';
 
-import KafkaProducerService from '../../kafka/kafka-producer.service';
+import KafkaPublisherService from '../../kafka/kafka-publisher.service';
 import UserEntity from '../users/entities/user.entity';
+import { buildAuthEvent } from '../users/users.events';
 import UsersService from '../users/users.service';
 import AccessTokenResponseDto from './dto/access-token-response.dto';
 import AuthResponseDto from './dto/auth-response.dto';
@@ -37,7 +33,7 @@ class AuthService {
     private readonly usersService: UsersService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
-    private readonly kafkaProducer: KafkaProducerService,
+    private readonly kafkaPublisher: KafkaPublisherService,
     private readonly tokenVerifier: TokenVerifierService,
   ) {}
 
@@ -54,11 +50,6 @@ class AuthService {
       ...dto,
       password: hashedPassword,
     });
-
-    await this.kafkaProducer.publish(
-      AuthKafkaTopic.USER_REGISTER,
-      this.buildEvent(user),
-    );
 
     return this.buildAuthResponse(user);
   }
@@ -88,11 +79,6 @@ class AuthService {
     }
 
     await this.usersService.recordLogin(user);
-
-    await this.kafkaProducer.publish(
-      AuthKafkaTopic.USER_LOGGED_IN,
-      this.buildEvent(user),
-    );
 
     return this.buildAuthResponse(user);
   }
@@ -133,11 +119,6 @@ class AuthService {
       buildUserAuditActor(user),
     );
 
-    await this.kafkaProducer.publish(
-      AuthKafkaTopic.PASSWORD_RESET_COMPLETED,
-      this.buildEvent(user),
-    );
-
     return {
       message: 'Password has been reset successfully',
     };
@@ -162,8 +143,8 @@ class AuthService {
       expiresAt,
     });
 
-    await this.kafkaProducer.publish(AuthKafkaTopic.PASSWORD_RESET_REQUESTED, {
-      ...this.buildEvent(user),
+    await this.kafkaPublisher.publish(AuthKafkaTopic.PASSWORD_RESET_REQUESTED, {
+      ...buildAuthEvent(user),
       resetToken: token,
       expiresAt: expiresAt.toISOString(),
     });
@@ -194,11 +175,6 @@ class AuthService {
       buildUserAuditActor(user),
     );
 
-    await this.kafkaProducer.publish(
-      AuthKafkaTopic.USER_CHANGE_PASSWORD,
-      this.buildEvent(user),
-    );
-
     return {
       message: 'Password changed successfully',
     };
@@ -212,11 +188,6 @@ class AuthService {
     const user = await this.usersService.findByIdOrFail(userId);
 
     await this.usersService.logout(userId, buildUserAuditActor(user));
-
-    await this.kafkaProducer.publish(
-      AuthKafkaTopic.USER_LOGGED_OUT,
-      this.buildEvent(user),
-    );
 
     return {
       message: 'Logged out successfully',
@@ -236,14 +207,6 @@ class AuthService {
       ...this.buildAccessTokenResponse(user),
       refreshToken: this.tokenService.generateRefreshToken(user),
       user,
-    };
-  }
-
-  private buildEvent(user: UserEntity): EventPayload<BaseAuthEvent> {
-    return {
-      userId: user.id,
-      email: user.email,
-      firstName: user.firstName,
     };
   }
 }

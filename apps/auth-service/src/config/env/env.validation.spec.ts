@@ -42,7 +42,6 @@ const validEnv = {
   OUTBOX_POLL_INTERVAL_MS: '1000',
   OUTBOX_BATCH_SIZE: '100',
   OUTBOX_RETENTION_MS: '604800000',
-  OUTBOX_RELAY_QUEUE: 'auth-outbox-relay',
   OUTBOX_RELAY_LOCK_ID: '7000001',
 };
 
@@ -344,14 +343,5 @@ describe('validate', () => {
         }),
       ).toThrow();
     });
-  });
-
-  describe('OUTBOX_RELAY_QUEUE', () => {
-    it.each(['TRIP-OUTBOX-RELAY', 'outbox', 'outbox_relay', '-outbox-relay'])(
-      'rejects %p',
-      (OUTBOX_RELAY_QUEUE) => {
-        expect(() => validate({ ...validEnv, OUTBOX_RELAY_QUEUE })).toThrow();
-      },
-    );
   });
 });

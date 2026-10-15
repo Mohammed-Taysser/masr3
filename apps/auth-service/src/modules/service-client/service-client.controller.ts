@@ -27,7 +27,7 @@ import ServiceTokenResponseDto from './dto/service-token-response.dto';
 import { BASIC_AUTHENTICATE_HEADER } from './service-client.constant';
 import ServiceClientService from './service-client.service';
 
-@ApiTags('internal')
+@ApiTags('Internal')
 @Controller(SERVICE_TOKENS_PATH)
 class ServiceClientController {
   constructor(private readonly serviceClientService: ServiceClientService) {}

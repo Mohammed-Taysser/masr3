@@ -7,7 +7,7 @@ import { OutboxModule } from '@masr3/libs/outbox';
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
-import KafkaProducerService from './kafka/kafka-producer.service';
+import { VEHICLE_OUTBOX_RELAY_QUEUE } from './kafka/kafka.constant';
 import KafkaModule from './kafka/kafka.module';
 import QueueModule from './queue/queue.module';
 import VehicleModule from './modules/vehicle/vehicle.module';
@@ -17,10 +17,7 @@ import VehicleModule from './modules/vehicle/vehicle.module';
     AppConfigModule,
     DatabaseModule,
     QueueModule,
-    OutboxModule.forRoot({
-      imports: [KafkaModule],
-      producer: KafkaProducerService,
-    }),
+    OutboxModule.forRoot({ queue: VEHICLE_OUTBOX_RELAY_QUEUE }),
     KafkaModule,
     AuthenticationModule.register(),
     VehicleModule,

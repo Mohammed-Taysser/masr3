@@ -22,6 +22,7 @@ collections generated from it. Token types and route protection are covered in
 | `notification-service` | `http://localhost:7001/api/docs` | `http://localhost:7001/api/docs-json` |
 | `trip-service`         | `http://localhost:7002/api/docs` | `http://localhost:7002/api/docs-json` |
 | `audit-service`        | `http://localhost:7003/api/docs` | `http://localhost:7003/api/docs-json` |
+| `vehicle-service`      | `http://localhost:7004/api/docs` | `http://localhost:7004/api/docs-json` |
 
 Routes are grouped by tag. auth-service puts its service-only routes (`/service-tokens`,
 `/internal/...`) under the `internal` tag. A route with a 🔒 needs credentials; a route without one
@@ -54,7 +55,8 @@ it was sent, look at the `curl` command Swagger UI shows above the response: it 
 ### Calling a protected route
 
 1. Open auth-service's Swagger (`:7000/api/docs`) and execute `POST /api/auth/login` with a seeded
-   user (`npx nx run auth-service:seed`). Every seeded user's password is `ChangeMe123!`.
+   user (`npx nx run auth-service:seed`). Every seeded user's password is `ChangeMe123!`; the seed
+   has several users of each role, for example:
 
    | Role     | User                   |
    | -------- | ---------------------- |
@@ -69,14 +71,15 @@ it was sent, look at the `curl` command Swagger UI shows above the response: it 
 
 ### Common mistakes
 
-| Symptom                                | Cause                                                                                                                                   |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 401 although you authorized            | You pasted `Bearer eyJ…`. Paste the token alone; Swagger UI adds the `Bearer` prefix itself, so the header became `Bearer Bearer eyJ…`. |
-| 401 on another service's page          | Each service's Swagger page is a separate page. Authorize on every page you use.                                                        |
-| 401 after reloading the page           | The stored token is lost on reload. Authorize again.                                                                                    |
-| 401 after a few minutes                | Access tokens live 300 s. Log in again, or call `POST /api/auth/refresh` with the `refreshToken`.                                       |
-| 403                                    | The token is valid but its role is not allowed on the route, e.g. a CUSTOMER on `/api/admin/...`. Log in as a user with the role.       |
-| No `Authorization` in the shown `curl` | The route has no 🔒: it is public, or its controller lacks `@ApiBearerAuth()` (see below).                                              |
+| Symptom                                             | Cause                                                                                                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401 although you authorized                         | You pasted `Bearer eyJ…`. Paste the token alone; Swagger UI adds the `Bearer` prefix itself, so the header became `Bearer Bearer eyJ…`.             |
+| 401 on another service's page                       | Each service's Swagger page is a separate page. Authorize on every page you use.                                                                    |
+| 401 after reloading the page                        | The stored token is lost on reload. Authorize again.                                                                                                |
+| 401 after a few minutes                             | Access tokens live 300 s. Log in again, or call `POST /api/auth/refresh` with the `refreshToken`.                                                   |
+| 403                                                 | The token is valid but its role is not allowed on the route, e.g. a CUSTOMER on `/api/admin/...`. Log in as a user with the role.                   |
+| 404 `Driver <id> not found` on `POST /api/vehicles` | vehicle-service knows drivers only from `auth.user-changed`. Seeded drivers predate it: run `npx nx run auth-service:users:publish-snapshots` once. |
+| No `Authorization` in the shown `curl`              | The route has no 🔒: it is public, or its controller lacks `@ApiBearerAuth()` (see below).                                                          |
 
 ## Service credentials (basic)
 
@@ -132,6 +135,7 @@ dist/postman/
     auth-service.postman_collection.json
     notification-service.postman_collection.json
     trip-service.postman_collection.json
+    vehicle-service.postman_collection.json
 ```
 
 The services must be **running** (`npx nx run-many -t serve`): the generator reads each spec from
@@ -144,9 +148,10 @@ Postman collections (dist/postman)
   CREATED  auth-service          18 requests → dist/postman/collections/auth-service.postman_collection.json
   SKIPPED  notification-service  not running on http://localhost:7001
   CREATED  trip-service          14 requests → dist/postman/collections/trip-service.postman_collection.json
+  CREATED  vehicle-service       9 requests → dist/postman/collections/vehicle-service.postman_collection.json
 
-Created 3, skipped 1, failed 0
-Combined 3 services, 35 requests → dist/postman/masr3.postman_collection.json
+Created 4, skipped 1, failed 0
+Combined 4 services, 44 requests → dist/postman/masr3.postman_collection.json
 ```
 
 | Status  | Reason shown                              | Meaning                                                        |
@@ -168,11 +173,11 @@ gitignored: regenerate after an API change rather than committing the files.
    `@ApiProperty({ example })` values, so login already has `customer@masr3.local`.
 2. Create an **environment** (e.g. `masr3 local`) and select it. Set the variables you need:
 
-   | Variable                                                                                                    | Where it is set            | Value                                                              |
-   | ----------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------ |
-   | `auth_service_base_url`, `notification_service_base_url`, `trip_service_base_url`, `audit_service_base_url` | the collection (generated) | `http://localhost:<PORT>` from the service's `.env`                |
-   | `bearer_token`                                                                                              | your environment           | an access token from login, or a service token for `/internal/...` |
-   | `basic_auth_username`, `basic_auth_password`                                                                | your environment           | client credentials for `/service-tokens` (see above)               |
+   | Variable                                                                                                                                | Where it is set            | Value                                                              |
+   | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------ |
+   | `auth_service_base_url`, `notification_service_base_url`, `trip_service_base_url`, `audit_service_base_url`, `vehicle_service_base_url` | the collection (generated) | `http://localhost:<PORT>` from the service's `.env`                |
+   | `bearer_token`                                                                                                                          | your environment           | an access token from login, or a service token for `/internal/...` |
+   | `basic_auth_username`, `basic_auth_password`                                                                                            | your environment           | client credentials for `/service-tokens` (see above)               |
 
 3. Run **Auth → login**, copy `accessToken` into `bearer_token`, and call any protected request.
 

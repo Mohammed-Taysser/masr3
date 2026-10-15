@@ -142,17 +142,17 @@ Every variable is **required** and validated at boot by `config/env/env.validati
 variable only when code reads it, and change **all four** places in one change:
 `env.validation.ts`, `.env.example`, `.env`, and the env spec (`validEnv` and its lists).
 
-| Family          | Variables                                                                                                           | Needed when                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Base            | `NODE_ENV`, `PORT=7004`, `SERVICE_NAME=rating-service`                                                              | always                             |
-| Database        | `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` + `db.env`                                                         | always                             |
-| `db.env`        | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB=rating_db` (committed)                                           | always                             |
-| Auth            | `AUTH_SERVICE_URL=http://localhost:7000/api` (JWKS)                                                                 | always (the guard verifies tokens) |
-| Kafka (any)     | `KAFKA_BROKER=localhost:42000`, `KAFKA_CLIENT_ID=rating-service`                                                    | produces or consumes               |
-| Kafka consumer  | `KAFKA_CONSUMER_GROUP_ID=rating-service`                                                                            | consumes                           |
-| Redis / BullMQ  | `REDIS_HOST=localhost`, `REDIS_PORT=44000`                                                                          | jobs or an outbox                  |
-| Outbox          | `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`, `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID` | has an outbox                      |
-| Calls a service | `SERVICE_CLIENT_ID` / `SERVICE_CLIENT_SECRET` (see authentication guide)                                            | calls another service's API        |
+| Family          | Variables                                                                                     | Needed when                        |
+| --------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Base            | `NODE_ENV`, `PORT=7004`, `SERVICE_NAME=rating-service`                                        | always                             |
+| Database        | `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` + `db.env`                                   | always                             |
+| `db.env`        | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB=rating_db` (committed)                     | always                             |
+| Auth            | `AUTH_SERVICE_URL=http://localhost:7000/api` (JWKS)                                           | always (the guard verifies tokens) |
+| Kafka (any)     | `KAFKA_BROKER=localhost:42000`, `KAFKA_CLIENT_ID=rating-service`                              | produces or consumes               |
+| Kafka consumer  | `KAFKA_CONSUMER_GROUP_ID=rating-service`                                                      | consumes                           |
+| Redis / BullMQ  | `REDIS_HOST=localhost`, `REDIS_PORT=44000`                                                    | jobs or an outbox                  |
+| Outbox          | `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`, `OUTBOX_RELAY_LOCK_ID` | has an outbox                      |
+| Calls a service | `SERVICE_CLIENT_ID` / `SERVICE_CLIENT_SECRET` (see authentication guide)                      | calls another service's API        |
 
 - Copy `.env.example` from a service with the same families and **change the values**: a copied
   `PORT=7000` or `SERVICE_NAME=trip-service` boots on the wrong port or under the wrong name.
@@ -263,15 +263,15 @@ flowchart LR
    list that matches the enum, plus the `kafka:create-topics` target from step 5. Run it.
 4. **Choose how to publish:**
    - **Outbox** (default): the event must not be lost or invented, because other services act
-     on it. Register `OutboxModule.forRoot({ imports: [KafkaModule], producer: KafkaProducerService })`
-     in `AppModule` (copy `kafka/kafka-producer.service.ts` and `queue/queue.module.ts`), declare
-     `OutboxEventMap` in `kafka/kafka.interface.ts`, inject
+     on it. Register `OutboxModule.forRoot({ queue: RATING_OUTBOX_RELAY_QUEUE })` in `AppModule`
+     (the queue is a constant in `kafka/kafka.constant.ts`, `rating-outbox-relay`; copy
+     `queue/queue.module.ts`), declare `OutboxEventMap` in `kafka/kafka.interface.ts`, inject
      `OutboxService<OutboxEventMap>`, and call `enqueue(manager, topic, payload, key)` with the
-     **transaction's** `manager`. Set the service's own `OUTBOX_RELAY_QUEUE` and
-     `OUTBOX_RELAY_LOCK_ID` in env (step 1). Full guide:
+     **transaction's** `manager`. Set the service's own `OUTBOX_RELAY_LOCK_ID` in env (step 1). Full guide:
      [transactional outbox](patterns/transactional-outbox.md).
-   - **Direct, best-effort:** only when losing the event is harmless (auth-service's sign-in
-     alert). `publish()` logs and swallows broker errors.
+   - **Direct, best-effort:** only when losing the event is harmless and it must not be stored
+     (auth-service's password-reset request, which carries the raw token). Wrap the shared `KafkaProducerService` the way auth-service's
+     `KafkaPublisherService` does: its `publish()` logs and swallows broker errors.
 
 ## 11. Consuming events
 
@@ -280,64 +280,63 @@ Copy `apps/audit-service/src/kafka/` (one topic) or `apps/notification-service/s
 
 1. **Env:** `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `KAFKA_CONSUMER_GROUP_ID=rating-service` in all
    four places (step 6).
-2. **The consumer service** (`kafka/kafka-consumer.service.ts`):
+2. **The consumer service** (`kafka/kafka-consumer.service.ts`) extends `BaseKafkaConsumer`
+   from `@masr3/libs/kafka`. The base connects, subscribes, validates each message against its
+   topic's DTO and dispatches it; the service supplies only three things:
 
    ```ts
-   type ConsumedEventMap = TripEventMap; // & AuthEventMap & …
+   type ConsumedEventMap = TripEventMap; // & Pick<AuthEventMap, …> & …
 
-   type TopicHandlers = {
-     [Topic in keyof ConsumedEventMap]: (event: ConsumedEventMap[Topic]) => Promise<unknown>;
-   };
+   @Injectable()
+   class KafkaConsumerService extends BaseKafkaConsumer<ConsumedEventMap> {
+     protected readonly handlers: KafkaTopicHandlers<ConsumedEventMap>;
+     protected readonly eventDtos = CONSUMED_EVENT_DTOS; // kafka/kafka.constant.ts
+     protected readonly subscriptions: KafkaSubscription<ConsumedEventMap>[] = [{ topics: [TripKafkaTopic.STATUS_CHANGED], fromBeginning: false }];
 
-   // in the constructor
-   this.consumer = kafka.consumer({
-     groupId: configService.getOrThrow<string>('KAFKA_CONSUMER_GROUP_ID'),
-     allowAutoTopicCreation: false,
-   });
-   this.handlers = {
-     [TripKafkaTopic.STATUS_CHANGED]: (event) => this.ratingService.handleTripStatus(event),
-   };
+     constructor(
+       configService: ConfigService,
+       private readonly ratingService: RatingService,
+     ) {
+       super(configService);
+
+       this.handlers = {
+         [TripKafkaTopic.STATUS_CHANGED]: (event) => this.ratingService.handleTripStatus(event),
+       };
+     }
+   }
    ```
 
-   The handler map is typed against the event map: a topic you subscribe to without a handler
-   is a compile error, not a silently ignored message.
+   The handler map and `CONSUMED_EVENT_DTOS` (`KafkaEventDtos<ConsumedEventMap>`) are typed
+   against the event map: a topic without a handler or a DTO is a compile error, not a silently
+   ignored message.
 
-3. **Subscribe and run** in `onModuleInit`; disconnect in `onModuleDestroy`:
-
-   ```ts
-   await this.consumer.connect();
-   await this.consumer.subscribe({ topics: [TripKafkaTopic.STATUS_CHANGED], fromBeginning: false });
-   await this.consumer.run({ eachMessage: (payload) => this.handleMessage(payload) });
-   ```
-
-   **`fromBeginning`** only matters while the group has no committed offset (first run, or a
+3. **`fromBeginning`** only matters while the group has no committed offset (first run, or a
    renamed group):
-   - `true`: read everything still on the topic. Right for a record of history (audit-service)
-     or for events that must all be handled (welcome emails for users who signed up before the
-     service existed).
+   - `true`: read everything still on the topic. Right for a record of history (audit-service),
+     a copy of another service's data (vehicle-service's drivers), or events that must all be
+     handled (welcome emails for users who signed up before the service existed).
    - `false`: start at the latest message. Right when old events would cause harm, such as
      emailing every past trip.
 
-4. **`handleMessage`: skip what can never succeed, rethrow everything else.**
-   - Unknown topic, empty value, bad JSON, missing required fields: **log and return**. The
-     offset is committed, so one poison message can't block the partition forever.
-   - Anything else (database down, a bug): **let it throw**. The offset is not committed and
-     kafkajs redelivers, so the event is not lost.
-   - Validate the parsed JSON with a class-validator DTO that `implements` the libs event
-     interface (`plainToInstance` + `validateSync`, as audit-service's
-     `AuditActionRecordedEventDto`). Check everything the insert depends on: formats
-     (`@IsISO8601`), ranges (`@Max(POSTGRES_INT_MAX)` for an `int` column), nested objects
-     (`@ValidateNested` + `@Type`). Log the failing fields. Prefer `@IsString` over `@IsEnum` for
-     values other services may extend, or a new value will be skipped.
+4. **One DTO per topic**, extending `KafkaEventDto` (libs) and implementing the libs event
+   interface. The base skips what can never succeed and rethrows everything else:
+   - Unknown topic, empty value, bad JSON, a message failing its DTO: **logged and skipped**.
+     The offset is committed, so one poison message can't block the partition forever.
+   - Anything the handler throws (database down, a bug): **rethrown**. The offset is not
+     committed and kafkajs redelivers, so the event is not lost.
+   - Check everything the insert depends on: formats (`@IsISO8601`), ranges
+     (`@Max(POSTGRES_INT_MAX)` for an `int` column), nested objects (`@ValidateNested` +
+     `@Type`). Prefer `@IsString` over `@IsEnum` for values other services may extend, or a new
+     value will be skipped.
 5. **Make the handler idempotent:** a unique column on `eventId` (`@Index(UQ_X_EVENT_ID, ['eventId'], { unique: true })`),
    insert first, and on `isUniqueViolation(error, UQ_X_EVENT_ID)` return as already handled.
-6. **`kafka/kafka.module.ts`** imports `ConfigModule` and the feature modules that hold the
-   handlers, provides `KafkaConsumerService`, and is imported by `app.module.ts`. It imports only
-   files that exist: a consumer-only service has no `kafka-producer.service.ts`.
+6. **`kafka/kafka.module.ts`** imports the feature modules that hold the handlers, provides
+   `KafkaConsumerService`, and is imported by `app.module.ts`. The producer is not in it: it comes
+   from libs, with `OutboxModule.forRoot`.
 7. **Make sure the topic exists** before you boot: run its owner's `kafka:create-topics`.
-8. **Spec it** (`kafka/spec/kafka-consumer.service.spec.ts`, copy audit-service's): dispatch to
-   the handler, skip each kind of malformed message, ignore an unknown topic, rethrow a handler
-   failure.
+8. **Spec it** (`kafka/spec/kafka-consumer.service.spec.ts`, copy vehicle-service's): each topic
+   reaches its handler, and the topic's DTO rejects what the handler can't use. The skip and
+   rethrow rules themselves are tested once, in libs.
 
 ## 12. Background jobs (BullMQ)
 
@@ -429,7 +428,6 @@ returns `{ status: 'ok', service: 'rating-service' }`. Point `global-setup.ts`,
 
 | Symptom                                                            | Cause and fix                                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Build fails: `Can't resolve './kafka-producer.service'`            | `kafka.module.ts` was copied from a producer. A consumer-only service provides `KafkaConsumerService` and imports the modules its handlers use.                                                                                                   |
 | `Cannot find module '@masr3/libs'` when migrating                  | The `migrate*` targets lack `TS_NODE_BASEURL="$PWD" NODE_OPTIONS="-r tsconfig-paths/register"`.                                                                                                                                                   |
 | `address already in use :::9229` on serve                          | The serve target has no `port`. Give it the next inspector port.                                                                                                                                                                                  |
 | Service boots on another service's port                            | `.env.example` / `.env` copied without changing `PORT` / `SERVICE_NAME`.                                                                                                                                                                          |

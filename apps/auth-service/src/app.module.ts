@@ -8,8 +8,7 @@ import { OutboxModule } from '@masr3/libs/outbox';
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
-import KafkaModule from './kafka/kafka.module';
-import KafkaProducerService from './kafka/kafka-producer.service';
+import { AUTH_OUTBOX_RELAY_QUEUE } from './kafka/kafka.constant';
 import QueueModule from './queue/queue.module';
 import AuthModule from './modules/auth/auth.module';
 import ServiceClientModule from './modules/service-client/service-client.module';
@@ -25,10 +24,7 @@ import AppThrottlerModule from './throttling/AppThrottlerModule.module';
     AppThrottlerModule,
     DatabaseModule,
     QueueModule,
-    OutboxModule.forRoot({
-      imports: [KafkaModule],
-      producer: KafkaProducerService,
-    }),
+    OutboxModule.forRoot({ queue: AUTH_OUTBOX_RELAY_QUEUE }),
     AuthenticationModule.register({
       imports: [SigningKeyModule, UsersModule],
       keyResolver: LocalKeyResolver,

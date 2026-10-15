@@ -22,7 +22,7 @@ import { RequireServiceScopes, ServiceScopeEnum } from '@masr3/libs/auth';
 import UserContactResponseDto from './dto/user-contact-response.dto';
 import UsersService from './users.service';
 
-@ApiTags('internal')
+@ApiTags('Internal')
 @ApiBearerAuth()
 @RequireServiceScopes(ServiceScopeEnum.USERS_CONTACT_READ)
 @Throttle({

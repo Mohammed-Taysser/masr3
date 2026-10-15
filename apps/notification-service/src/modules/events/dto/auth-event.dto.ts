@@ -1,8 +1,6 @@
 import { IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
-import { BaseAuthEvent } from '@masr3/libs/kafka';
-
-import KafkaEventDto from './kafka-event.dto';
+import { BaseAuthEvent, KafkaEventDto } from '@masr3/libs/kafka';
 
 // Every auth.* topic; the ones with extra fields extend it.
 class AuthEventDto extends KafkaEventDto implements BaseAuthEvent {

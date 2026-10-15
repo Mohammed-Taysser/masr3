@@ -870,11 +870,11 @@ describe('UsersService', () => {
   });
 
   describe('recordLogin', () => {
-    it('records USER_LOGGED_IN on the default manager without a transaction', async () => {
+    it('records USER_LOGGED_IN in one transaction with its auth event', async () => {
       await service.recordLogin(user);
 
-      expect(dataSource.transaction).not.toHaveBeenCalled();
-      expect(auditRecorder.record).toHaveBeenCalledWith(dataSource.manager, {
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
         action: AuditActionEnum.LOGGED_IN,
         entity: { type: AuditEntityTypeEnum.USER, id: user.id },
         actor: userActor,
@@ -1074,6 +1074,85 @@ describe('UsersService', () => {
     });
   });
 
+  describe('auth.* events', () => {
+    const expectAuthEvent = (topic: AuthKafkaTopic) => {
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        manager,
+        topic,
+        { userId: user.id, email: user.email, firstName: user.firstName },
+        String(user.id),
+      );
+    };
+
+    const insertNewUser = () => {
+      manager.findOneBy.mockResolvedValue(null);
+      manager.create.mockReturnValue(user as never);
+      manager.save.mockResolvedValue(user);
+    };
+
+    it('enqueues auth.user-register when someone signs up', async () => {
+      insertNewUser();
+
+      await service.register(createDto);
+
+      expectAuthEvent(AuthKafkaTopic.USER_REGISTER);
+    });
+
+    it('does not enqueue auth.user-register when an admin creates a user', async () => {
+      insertNewUser();
+
+      await service.create(createDto, adminActor);
+
+      expect(outboxService.enqueue).not.toHaveBeenCalledWith(
+        manager,
+        AuthKafkaTopic.USER_REGISTER,
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('enqueues auth.user-logged-in with the login audit', async () => {
+      await service.recordLogin(user);
+
+      expectAuthEvent(AuthKafkaTopic.USER_LOGGED_IN);
+    });
+
+    it.each([
+      [
+        'logout',
+        AuthKafkaTopic.USER_LOGGED_OUT,
+        (target: UsersService) => target.logout(1, userActor),
+      ],
+      [
+        'changePassword',
+        AuthKafkaTopic.USER_CHANGE_PASSWORD,
+        (target: UsersService) => target.changePassword(1, 'hash', userActor),
+      ],
+      [
+        'resetPassword',
+        AuthKafkaTopic.PASSWORD_RESET_COMPLETED,
+        (target: UsersService) => target.resetPassword(1, 'hash', userActor),
+      ],
+    ])('%s enqueues %s in its transaction', async (_name, topic, call) => {
+      mockLockedRow(user, user);
+
+      await call(service);
+
+      expectAuthEvent(topic);
+    });
+
+    it('leaves auth.password-reset-requested to the direct publisher', async () => {
+      mockLockedRow(user, user);
+
+      await service.setPasswordResetToken(1, {
+        tokenHash: 'hashed-reset-token',
+        expiresAt: dayjs().add(1, 'hour').toDate(),
+      });
+
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('auth.user-changed', () => {
     const expectPublished = (snapshot: UserEntity, change: UserChangeEnum) => {
       expect(outboxService.enqueue).toHaveBeenCalledWith(
@@ -1127,7 +1206,12 @@ describe('UsersService', () => {
 
       await service.logout(1, userActor);
 
-      expect(outboxService.enqueue).not.toHaveBeenCalled();
+      expect(outboxService.enqueue).not.toHaveBeenCalledWith(
+        manager,
+        AuthKafkaTopic.USER_CHANGED,
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('publishes DELETED with the last state when a user is removed', async () => {

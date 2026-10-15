@@ -170,7 +170,7 @@ sequenceDiagram
 ### Publishing events (transactional outbox)
 
 The shared outbox from `@masr3/libs` (`OutboxModule.forRoot` in `AppModule`), on queue
-`vehicle-outbox-relay` with lock id `7004001`, both from env (`OUTBOX_RELAY_QUEUE`,
+`vehicle-outbox-relay` (`VEHICLE_OUTBOX_RELAY_QUEUE`) with lock id `7004001` (env
 `OUTBOX_RELAY_LOCK_ID`). See [`docs/patterns/transactional-outbox.md`](../patterns/transactional-outbox.md).
 
 ## API

@@ -16,20 +16,46 @@ Token types, claims, scopes, rotation and failure behaviour are covered in depth
 
 ```mermaid
 flowchart LR
-  app([Client apps]) -->|register, login, refresh| auth[auth-service :7000]
-  admin([Admin]) -->|/users CRUD| auth
-  auth -->|via pgbouncer :41500| db[(auth-db)]
-  auth -->|best-effort publish| topics{{auth.* topics}}
-  topics --> notification[notification-service]
-  auth -->|BullMQ auth-outbox-relay| redis[(Redis :44000)]
-  auth -->|outbox relay| audit{{audit.action-recorded}}
-  audit --> auditService[audit-service]
-  auth -->|outbox relay| changed{{auth.user-changed}}
+  subgraph callers [Calls auth-service]
+    direction TB
+    app([Client apps])
+    admin([Admin])
+    caller[notification-service]
+    every([Every service])
+  end
+
+  auth[auth-service :7000]
+
+  subgraph storage [Storage]
+    direction TB
+    db[(auth-db<br/>via pgbouncer :41500)]
+    redis[(Redis :44000<br/>queue auth-outbox-relay)]
+  end
+
+  subgraph kafka [Kafka]
+    direction TB
+    alerts{{auth.* sign-in and password events}}
+    reset{{auth.password-reset-requested}}
+    changed{{auth.user-changed}}
+    audit{{audit.action-recorded}}
+  end
+
+  app -->|register, login, refresh| auth
+  admin -->|/users CRUD| auth
+  caller -->|POST /service-tokens,<br/>GET /internal/users/:id/contact| auth
+  every -->|GET /.well-known/jwks.json, cached| auth
+
+  auth --> db
+  auth --> redis
+  auth -->|outbox| alerts
+  auth -->|best-effort, raw token| reset
+  auth -->|outbox| changed
+  auth -->|outbox| audit
+
+  alerts --> notification[notification-service]
+  reset --> notification
   changed -->|copy of drivers| vehicle[vehicle-service]
-  notification -->|service token: /internal/users/:id/contact| auth
-  notification -->|POST /service-tokens, Basic secret| auth
-  trip[trip-service] -->|GET /.well-known/jwks.json, cached| auth
-  notification -->|GET /.well-known/jwks.json, cached| auth
+  audit --> auditService[audit-service]
 ```
 
 ## Data model
@@ -51,8 +77,8 @@ erDiagram
   outbox_events {
     int id PK
     uuid eventId UK
-    string topic "audit.action-recorded"
-    string key "USER-id"
+    string topic "audit.action-recorded, auth.*"
+    string key "USER-id (audit), userId (auth.*)"
     jsonb payload
     int attempts
     string lastError
@@ -78,18 +104,19 @@ sequenceDiagram
   U->>A: POST /auth/register
   A->>DB: email taken? (409 if so)
   A->>DB: BEGIN, INSERT users (bcrypt password)
-  A->>DB: INSERT outbox_events (audit USER REGISTERED), COMMIT
-  A-)K: auth.user-register (best effort)
+  A->>DB: INSERT outbox_events (audit REGISTERED, auth.user-changed, auth.user-register), COMMIT
   A-->>U: accessToken, refreshToken, user
   U->>A: POST /auth/login
   A->>DB: find user, check isActive and password
-  A->>DB: INSERT outbox_events (audit USER LOGGED_IN)
-  A-)K: auth.user-logged-in (best effort)
+  A->>DB: BEGIN, INSERT outbox_events (audit LOGGED_IN, auth.user-logged-in), COMMIT
   A-->>U: accessToken (5 min), refreshToken (7 days)
+  Note over DB,K: the relay sends the rows to Kafka on its next tick
 ```
 
-- **Best-effort publishing:** a Kafka outage must not turn register or login into a 500, so
-  `publish()` logs and swallows broker failures. The cost: a lost event is a lost email.
+- **Through the outbox:** the welcome email and the sign-in alert are enqueued in the same
+  transaction as their audit row, so a Kafka outage neither fails the request nor loses the
+  email; it goes out when Kafka is back. Every login writes two outbox rows, which is why auth's
+  `OUTBOX_BATCH_SIZE` is 500.
 - Wrong email and wrong password give the same `401`, so the response doesn't reveal which
   emails exist. Login is rate-limited.
 
@@ -125,17 +152,22 @@ sequenceDiagram
   participant N as notification-service
   U->>A: POST /auth/forgot-password { email }
   A->>DB: store sha256 of a random token, with expiry
-  A-)K: auth.password-reset-requested (raw token, 1 h retention)
+  A-)K: auth.password-reset-requested (direct, best effort: raw token, 1 h retention)
   A-->>U: same message whether or not the email exists
   K-)N: event
   N-)U: email with the reset link
   U->>A: POST /auth/reset-password { token, newPassword }
   A->>DB: find by token hash, not expired
   A->>DB: new password, clear token, bump tokenVersion
-  A-)K: auth.password-reset-completed
+  A->>DB: INSERT outbox_events (audit, auth.password-reset-completed), COMMIT
 ```
 
 Only the token's hash is stored. notification-service stores the email with the token masked.
+`auth.password-reset-requested` is the one event published directly, by
+`KafkaPublisherService`: through the outbox, the raw token would sit in `outbox_events` for the
+whole retention. A failed send is logged and the user asks for another email. It goes through the
+shared producer from `@masr3/libs/kafka`, which connects on first use, so auth-service boots
+while Kafka is down.
 
 ### Audit events (transactional outbox)
 
@@ -162,8 +194,8 @@ sequenceDiagram
 ```
 
 - Every user write in `UsersService` goes through `writeAudited` (or `insert` for a new user),
-  so the audit row exists exactly when the change does. Read-only login writes only the outbox
-  row.
+  so the audit row exists exactly when the change does. Login changes no row, so its
+  transaction holds only its two outbox rows.
 - `modules/audit/` holds `AuditRecorderService`, the service's one way to produce an audit
   event: it adds `schemaVersion`, `SERVICE_NAME` and the key, then enqueues into the outbox.
   The feature (here `UsersService`) owns the allow-list and the diff.
@@ -173,9 +205,11 @@ sequenceDiagram
 - Actors: the signed-in user (`buildUserAuditActor`), the admin on `/users` routes
   (`@CurrentUser()`), or `ANONYMOUS_AUDIT_ACTOR` for forgot-password.
 - The same transaction also enqueues `auth.user-changed` (`UsersService.publishChanged`) when
-  a field in `USER_SNAPSHOT_FIELDS` changed, so logins and password changes publish nothing.
+  a field in `USER_SNAPSHOT_FIELDS` changed, so logins and password changes don't publish it.
+- And it enqueues the write's `auth.*` event (`UsersService.publishAuthEvent`, the
+  `OutboxAuthKafkaTopic`s): register, login, logout, password change and reset completed.
 - The outbox is the shared one from `@masr3/libs`, on queue `auth-outbox-relay` with advisory
-  lock `7000001` (env `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID`). Redis is shared, so a
+  lock `7000001` (`AUTH_OUTBOX_RELAY_QUEUE`, env `OUTBOX_RELAY_LOCK_ID`). Redis is shared, so a
   queue without the `auth-` prefix could collide with another service's. See
   [the outbox pattern](../patterns/transactional-outbox.md).
 
@@ -215,8 +249,9 @@ from `@masr3/libs`. The guard fetches `GET /api/.well-known/jwks.json` once, cac
 
 ## Events
 
-Keyed by `userId`. Contracts: `AuthEventMap` in `libs/src/lib/kafka/auth/`. All are published
-best-effort except `auth.user-changed`, which goes through the outbox.
+Keyed by `userId`. Contracts: `AuthEventMap` in `libs/src/lib/kafka/auth/`. All go through the
+outbox except `auth.password-reset-requested`, which is published directly, best effort, because
+it carries the raw reset token.
 
 | Topic                           | Published by                                                                     | notification-service sends     |
 | ------------------------------- | -------------------------------------------------------------------------------- | ------------------------------ |

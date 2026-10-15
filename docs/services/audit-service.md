@@ -220,6 +220,4 @@ The shared guard from `@masr3/libs` verifies access tokens locally against auth-
   (`NOTIFICATION_PREFERENCE` `UPDATED`), inbox reads and archives (`NOTIFICATION` `UPDATED`)
   and admin retries (`NOTIFICATION_DELIVERY` `STATUS_CHANGED`). A new service adds its own
   entity types the same way.
-- **auth-service domain events** (`auth.*`) still use best-effort direct publishing. Its new
-  outbox could carry them too.
 - **Drop the unused `audit_log` table** left by the first migration.

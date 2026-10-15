@@ -1,4 +1,10 @@
 export * from './kafka.events';
+export * from './kafka.interface';
+
+export { default as BaseKafkaConsumer } from './base-kafka-consumer';
+export { default as KafkaEventDto } from './kafka-event.dto';
+export { default as KafkaProducerModule } from './kafka-producer.module';
+export { default as KafkaProducerService } from './kafka-producer.service';
 
 export * from './audit/audit.builders';
 export * from './audit/audit.constant';

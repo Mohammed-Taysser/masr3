@@ -1,9 +1,12 @@
-import { ClassConstructor } from 'class-transformer';
-
-import { AuthKafkaTopic, TripKafkaTopic } from '@masr3/libs/kafka';
+import {
+  AuthEventMap,
+  AuthKafkaTopic,
+  KafkaEventDtos,
+  TripEventMap,
+  TripKafkaTopic,
+} from '@masr3/libs/kafka';
 
 import AuthEventDto from '../modules/events/dto/auth-event.dto';
-import KafkaEventDto from '../modules/events/dto/kafka-event.dto';
 import PasswordResetRequestedEventDto from '../modules/events/dto/password-reset-requested-event.dto';
 import TripStatusChangedEventDto from '../modules/events/dto/trip-status-changed-event.dto';
 import UserLoggedInEventDto from '../modules/events/dto/user-logged-in-event.dto';
@@ -22,9 +25,8 @@ const CONSUMED_AUTH_TOPICS = Object.values(AuthKafkaTopic).filter(
 
 // The DTO each consumed topic is validated against before its handler runs.
 // Typed by topic: a topic added to an enum without a DTO here does not compile.
-const CONSUMED_EVENT_DTOS: Record<
-  ConsumedAuthKafkaTopic | TripKafkaTopic,
-  ClassConstructor<KafkaEventDto>
+const CONSUMED_EVENT_DTOS: KafkaEventDtos<
+  Pick<AuthEventMap, ConsumedAuthKafkaTopic> & TripEventMap
 > = {
   [AuthKafkaTopic.USER_REGISTER]: AuthEventDto,
   [AuthKafkaTopic.USER_LOGGED_IN]: UserLoggedInEventDto,

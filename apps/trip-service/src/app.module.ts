@@ -7,8 +7,7 @@ import { OutboxModule } from '@masr3/libs/outbox';
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
-import KafkaModule from './kafka/kafka.module';
-import KafkaProducerService from './kafka/kafka-producer.service';
+import { TRIP_OUTBOX_RELAY_QUEUE } from './kafka/kafka.constant';
 import QueueModule from './queue/queue.module';
 import TripOfferModule from './modules/trip-offer/trip-offer.module';
 import TripModule from './modules/trip/trip.module';
@@ -18,10 +17,7 @@ import TripModule from './modules/trip/trip.module';
     AppConfigModule,
     DatabaseModule,
     QueueModule,
-    OutboxModule.forRoot({
-      imports: [KafkaModule],
-      producer: KafkaProducerService,
-    }),
+    OutboxModule.forRoot({ queue: TRIP_OUTBOX_RELAY_QUEUE }),
     AuthenticationModule.register(),
     TripModule,
     TripOfferModule,

@@ -28,15 +28,21 @@ import { OutboxService } from '@masr3/libs/outbox';
 import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
 import AuditRecorderService from '../audit/audit-recorder.service';
-import { OutboxEventMap } from '../../kafka/kafka.interface';
+import {
+  OutboxAuthKafkaTopic,
+  OutboxEventMap,
+} from '../../kafka/kafka.interface';
 
 import UserEntity from './entities/user.entity';
 import CreateUserDto from './dto/create-user.dto';
-import { PasswordResetTokenOptions } from './users.interface';
+import {
+  AuditedWriteOptions,
+  PasswordResetTokenOptions,
+} from './users.interface';
 import UpdateUserDto from './dto/update-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';
 import { USER_AUDITED_FIELDS, USER_SNAPSHOT_FIELDS } from './users.constant';
-import { buildUserChangedEvent } from './user-changed.event';
+import { buildAuthEvent, buildUserChangedEvent } from './users.events';
 
 @Injectable()
 class UsersService {
@@ -60,12 +66,17 @@ class UsersService {
 
   // An admin creating an account.
   async create(dto: CreateUserDto, actor: AuditActor): Promise<UserEntity> {
-    return this.insert(dto, AuditActionEnum.CREATED, () => actor);
+    return this.insert(dto, AuditActionEnum.CREATED, () => actor, null);
   }
 
   // Someone signing themselves up: the new user is their own actor.
   async register(dto: CreateUserDto): Promise<UserEntity> {
-    return this.insert(dto, AuditActionEnum.REGISTERED, buildUserAuditActor);
+    return this.insert(
+      dto,
+      AuditActionEnum.REGISTERED,
+      buildUserAuditActor,
+      AuthKafkaTopic.USER_REGISTER,
+    );
   }
 
   async update(id: number, dto: UpdateUserDto, actor: AuditActor) {
@@ -94,12 +105,16 @@ class UsersService {
   }
 
   async recordLogin(user: UserEntity): Promise<void> {
-    await this.auditRecorder.record(this.dataSource.manager, {
-      action: AuditActionEnum.LOGGED_IN,
-      entity: { type: AuditEntityTypeEnum.USER, id: user.id },
-      actor: buildUserAuditActor(user),
-      changes: null,
-      metadata: null,
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditRecorder.record(manager, {
+        action: AuditActionEnum.LOGGED_IN,
+        entity: { type: AuditEntityTypeEnum.USER, id: user.id },
+        actor: buildUserAuditActor(user),
+        changes: null,
+        metadata: null,
+      });
+
+      await this.publishAuthEvent(manager, user, AuthKafkaTopic.USER_LOGGED_IN);
     });
   }
 
@@ -187,8 +202,12 @@ class UsersService {
   }
 
   async logout(id: number, actor: AuditActor): Promise<void> {
-    await this.writeAudited(id, AuditActionEnum.LOGGED_OUT, actor, (manager) =>
-      manager.increment(UserEntity, { id }, 'tokenVersion', 1),
+    await this.writeAudited(
+      id,
+      AuditActionEnum.LOGGED_OUT,
+      actor,
+      (manager) => manager.increment(UserEntity, { id }, 'tokenVersion', 1),
+      { event: AuthKafkaTopic.USER_LOGGED_OUT },
     );
   }
 
@@ -212,7 +231,7 @@ class UsersService {
             passwordResetExpiresAt: expiresAt,
           },
         ),
-      { expiresAt: dayjs(expiresAt).toISOString() },
+      { metadata: { expiresAt: dayjs(expiresAt).toISOString() } },
     );
   }
 
@@ -257,6 +276,7 @@ class UsersService {
             tokenVersion: () => '"tokenVersion" + 1',
           },
         ),
+      { event: AuthKafkaTopic.PASSWORD_RESET_COMPLETED },
     );
   }
 
@@ -278,6 +298,7 @@ class UsersService {
             tokenVersion: () => '"tokenVersion" + 1',
           },
         ),
+      { event: AuthKafkaTopic.USER_CHANGE_PASSWORD },
     );
   }
 
@@ -285,6 +306,7 @@ class UsersService {
     dto: CreateUserDto,
     action: AuditActionEnum,
     actorFor: (user: UserEntity) => AuditActor,
+    event: OutboxAuthKafkaTopic | null,
   ): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const existingUser = await manager.findOneBy(UserEntity, {
@@ -307,18 +329,23 @@ class UsersService {
 
       await this.publishChanged(manager, user, UserChangeEnum.CREATED);
 
+      if (event) {
+        await this.publishAuthEvent(manager, user, event);
+      }
+
       return user;
     });
   }
 
-  // Locks the row, applies the write, and records the before/after diff in the
-  // same transaction, so the audit entry exists exactly when the change does.
+  // Locks the row, applies the write, and records the before/after diff (and
+  // the change's auth.* event, if any) in the same transaction, so the audit
+  // entry and the event exist exactly when the change does.
   private async writeAudited(
     id: number,
     action: AuditActionEnum,
     actor: AuditActor,
     write: (manager: EntityManager) => Promise<unknown>,
-    metadata: Record<string, unknown> | null = null,
+    options: AuditedWriteOptions = {},
   ): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const before = await UsersService.lockOrFail(manager, id);
@@ -332,11 +359,15 @@ class UsersService {
         entity: { type: AuditEntityTypeEnum.USER, id },
         actor,
         changes: buildAuditChanges(before, after, USER_AUDITED_FIELDS),
-        metadata,
+        metadata: options.metadata ?? null,
       });
 
       if (buildAuditChanges(before, after, USER_SNAPSHOT_FIELDS)) {
         await this.publishChanged(manager, after, UserChangeEnum.UPDATED);
+      }
+
+      if (options.event) {
+        await this.publishAuthEvent(manager, after, options.event);
       }
 
       return after;
@@ -352,6 +383,19 @@ class UsersService {
       manager,
       AuthKafkaTopic.USER_CHANGED,
       buildUserChangedEvent(user, change),
+      String(user.id),
+    );
+  }
+
+  private async publishAuthEvent(
+    manager: EntityManager,
+    user: UserEntity,
+    topic: OutboxAuthKafkaTopic,
+  ): Promise<void> {
+    await this.outboxService.enqueue(
+      manager,
+      topic,
+      buildAuthEvent(user),
       String(user.id),
     );
   }

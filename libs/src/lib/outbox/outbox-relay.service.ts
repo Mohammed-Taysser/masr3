@@ -10,14 +10,13 @@ import { Message, TopicMessages } from 'kafkajs';
 import { DataSource, EntityManager, In, IsNull, LessThan } from 'typeorm';
 
 import { dayjs } from '../date/dayjs';
+import KafkaProducerService from '../kafka/kafka-producer.service';
 import OutboxEventEntity from './entities/outbox-event.entity';
 import {
-  OUTBOX_PRODUCER,
   OUTBOX_RELAY_QUEUE,
   OUTBOX_RELAY_SCHEDULER_SUFFIX,
 } from './outbox.constant';
 import { OutboxJobEnum } from './outbox.enum';
-import { OutboxProducer } from './outbox.interface';
 
 @Injectable()
 class OutboxRelayService implements OnApplicationBootstrap {
@@ -32,7 +31,7 @@ class OutboxRelayService implements OnApplicationBootstrap {
 
   constructor(
     private readonly dataSource: DataSource,
-    @Inject(OUTBOX_PRODUCER) private readonly producer: OutboxProducer,
+    private readonly producer: KafkaProducerService,
     @Inject(OUTBOX_RELAY_QUEUE) private readonly relayQueue: Queue,
     configService: ConfigService,
   ) {
@@ -42,7 +41,7 @@ class OutboxRelayService implements OnApplicationBootstrap {
     this.batchSize = configService.getOrThrow<number>('OUTBOX_BATCH_SIZE');
     this.retentionMs = configService.getOrThrow<number>('OUTBOX_RETENTION_MS');
     this.lockId = configService.getOrThrow<number>('OUTBOX_RELAY_LOCK_ID');
-    this.schedulerId = `${configService.getOrThrow<string>('OUTBOX_RELAY_QUEUE')}${OUTBOX_RELAY_SCHEDULER_SUFFIX}`;
+    this.schedulerId = `${relayQueue.name}${OUTBOX_RELAY_SCHEDULER_SUFFIX}`;
   }
 
   // BullMQ adds a RELAY job every interval; the relay processor runs it.

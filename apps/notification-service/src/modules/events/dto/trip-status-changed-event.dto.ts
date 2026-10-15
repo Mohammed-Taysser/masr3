@@ -9,13 +9,12 @@ import {
 } from 'class-validator';
 
 import {
+  KafkaEventDto,
   TripActorEnum,
   TripStatusChangedEvent,
   TripStatusEnum,
   TripTypeEnum,
 } from '@masr3/libs/kafka';
-
-import KafkaEventDto from './kafka-event.dto';
 
 // Statuses, type and actor are checked as strings, not @IsEnum: a value
 // trip-service adds before this service is redeployed must reach the handler,

@@ -103,8 +103,9 @@ doc, setup and commands.
 - **Money** is `decimal` in the currency's major unit (EGP, 2 decimals), never a float column.
 - **Shared code:**
   - Scope it to the service (`src/shared/…`) by default.
-  - Put it in `libs` only when it is truly cross-service (Kafka contracts, dayjs, pagination,
-    `isUniqueViolation`, `decimalTransformer`, money columns and `@IsMoney()`, the outbox).
+  - Put it in `libs` only when it is truly cross-service (Kafka contracts, the Kafka producer
+    and consumer base, dayjs, pagination, `isUniqueViolation`, `decimalTransformer`, money columns
+    and `@IsMoney()`, the outbox).
   - Pagination: list query DTOs `extends PaginationQueryDto`; paginated responses are
     `class PaginatedXResponseDto extends PaginatedResponseDto(XResponseDto) {}`.
   - Import libs by domain: `@masr3/libs/auth`, `/database`, `/date`, `/kafka`, `/money`,
@@ -135,9 +136,11 @@ apps/<svc>/
     database/data-source.ts           CLI DataSource (dotenv .env + db.env), same entity list
     database/migrations/              <timestamp>-<kebab-name>.ts, CLI-generated only
     health/                           public GET /api/health → { status, service: SERVICE_NAME, timestamp }
-    kafka/                            producer and/or consumer service + module (when the service uses Kafka);
-                                      kafka.interface.ts: OutboxEventMap, the topics it publishes through
-                                      its outbox (OutboxModule.forRoot from libs in AppModule)
+    kafka/                            when the service uses Kafka. kafka-consumer.service.ts extends libs'
+                                      BaseKafkaConsumer (+ kafka.module.ts); kafka.constant.ts: its DTO per
+                                      consumed topic and <SVC>_OUTBOX_RELAY_QUEUE; kafka.interface.ts:
+                                      OutboxEventMap, the topics it publishes through its outbox
+                                      (OutboxModule.forRoot({ queue }) from libs in AppModule)
     queue/                            BullMQ root module: the Redis connection (when the service has jobs)
     modules/audit/                    AuditRecorderService (when it produces audit events; needs the outbox)
     modules/<name>/
@@ -248,8 +251,8 @@ apps/<svc>/
   - An unexpected error is thrown, so the job is marked failed in bull-board.
   - The job must be safe to run twice, or concurrently on two instances: go through the same
     locked service method as everything else.
-- **Names:** queue names and scheduler ids are constants in `<module>.constant.ts` (except the
-  outbox relay's, which is each service's `OUTBOX_RELAY_QUEUE` env variable), job names an
+- **Names:** queue names and scheduler ids are constants in `<module>.constant.ts` (the outbox
+  relay's is `<SVC>_OUTBOX_RELAY_QUEUE` in `kafka/kafka.constant.ts`), job names an
   enum in `<module>.enum.ts`, payloads an interface in `<module>.interface.ts`. Queue names are
   global across services (one Redis, default prefix): never reuse another service's name.
   Queue names and scheduler ids are lowercase kebab-case, prefixed with the service
@@ -311,10 +314,14 @@ audit-service is the only store of the audit trail; other services produce to
   `enqueue`. It is keyed by the aggregate id (`userId`, `tripId`) to keep ordering.
 - **Typing:** `publish<Topic>(topic, payload: EventPayload<EventMap[Topic]>)`, so a mismatched payload does not
   compile. Consumers map every topic to a handler.
-- **Consumer failures:**
+- **Producer and consumer** come from `@masr3/libs/kafka`. `KafkaProducerService` (idempotent,
+  connects lazily) is brought in by `OutboxModule.forRoot`; a direct publisher wraps it (auth's
+  `KafkaPublisherService`). A consumer extends `BaseKafkaConsumer<EventMap>` and supplies
+  `handlers`, `eventDtos` and `subscriptions`; never copy the connect/parse/dispatch code.
+- **Consumer failures** (handled by `BaseKafkaConsumer`):
   - A message that can never succeed (unknown topic, bad JSON, missing fields) is logged and
-    skipped. Validate it with a class-validator DTO per topic that `implements` the libs event
-    interface (`plainToInstance` + `validateSync`), never hand-written `typeof` checks. Check
+    skipped. Validate it with a class-validator DTO per topic that extends `KafkaEventDto` and
+    `implements` the libs event interface, never hand-written `typeof` checks. Check
     what the handler and the insert need (formats, ranges, nested objects); use `@IsString`,
     not `@IsEnum`, for values the producer may extend, or a new value is dropped.
   - A delivery failure is not a consumer failure: notification-service records it on the
@@ -326,8 +333,9 @@ audit-service is the only store of the audit trail; other services produce to
     through a transactional outbox. Follow
     [`docs/patterns/transactional-outbox.md`](docs/patterns/transactional-outbox.md); trip-service
     is the reference.
-  - **Best-effort direct publishing** is only for events whose loss is harmless, like
-    auth-service's sign-in alerts.
+  - **Best-effort direct publishing** is only for events whose loss is harmless and that must
+    not be stored in a table: auth-service's `auth.password-reset-requested`, which carries the
+    raw reset token. Every other auth event goes through its outbox.
 - **One topic per aggregate** (e.g. `trip.status-changed`) when consumers need its events in
   order. Kafka orders messages only within a partition, never across topics.
 

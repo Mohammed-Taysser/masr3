@@ -6,7 +6,7 @@ import { OutboxService } from '@masr3/libs/outbox';
 import dataSource from '../../database/data-source';
 import { OutboxEventMap } from '../../kafka/kafka.interface';
 import UserEntity from './entities/user.entity';
-import { buildUserChangedEvent } from './user-changed.event';
+import { buildUserChangedEvent } from './users.events';
 
 // One-off backfill: users written before auth.user-changed existed (the seed,
 // older accounts) were never published. Enqueues a snapshot of every user;
