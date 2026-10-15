@@ -18,7 +18,7 @@ import {
 import {
   AUTH_SERVICE_URL_PATTERN,
   SERVICE_CLIENT_SECRET_PATTERN,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import { toBoolean } from '../../shared/transformers/to-boolean.transformer';
 

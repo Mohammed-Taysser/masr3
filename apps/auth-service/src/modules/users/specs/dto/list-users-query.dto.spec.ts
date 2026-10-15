@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import ListUsersQueryDto from '../../dto/list-users-query.dto';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 import { SortOrder, UserSortBy } from '../../users.enum';
 

@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
-import { TripStatusEnum, TripTypeEnum } from '@masr3/libs';
+import { TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
 
 class TripResponseDto {
   @Expose()

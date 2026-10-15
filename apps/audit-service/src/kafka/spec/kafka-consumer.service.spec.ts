@@ -6,7 +6,7 @@ import {
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
   AuditKafkaTopic,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuditService from '../../modules/audit/audit.service';
 import KafkaConsumerService from '../kafka-consumer.service';

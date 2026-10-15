@@ -1,6 +1,6 @@
 import { validate } from 'class-validator';
 import CreateUserDto from '../../dto/create-user.dto';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 describe('CreateUserDto', () => {
   const createDto = (overrides: Partial<CreateUserDto> = {}): CreateUserDto => {

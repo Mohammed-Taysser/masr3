@@ -16,7 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Roles, UserRoleEnum } from '@masr3/libs';
+import { Roles, UserRoleEnum } from '@masr3/libs/auth';
 
 import DeliveryLogService from './delivery/delivery-log.service';
 import DeliveryResponseDto from './dto/delivery-response.dto';

@@ -2,10 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, IsNull, Not, Repository } from 'typeorm';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
+import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
-import { Paginated } from '../../shared/pagination/pagination.interface';
-import { paginate } from '../../shared/pagination/pagination';
 import NotificationEntity from '../notification/entities/notification.entity';
 import ListInboxQueryDto from './dto/list-inbox-query.dto';
 
@@ -23,11 +22,10 @@ class InboxService {
     const [items, total] = await this.notificationRepository.findAndCount({
       where: InboxService.prepareListWhere(userId, query),
       order: { inboxAt: 'DESC', id: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      ...paginationWindow(query),
     });
 
-    return paginate(items, total, query.page, query.limit);
+    return paginate(items, total, query);
   }
 
   async unreadCount(userId: number): Promise<number> {

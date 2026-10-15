@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { ServiceTokenModule } from '@masr3/libs';
+import { ServiceTokenModule } from '@masr3/libs/auth';
 
 import AuthServiceClient from './auth-service.client';
 

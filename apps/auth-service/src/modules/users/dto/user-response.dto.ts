@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 class UserResponseDto {
   @Expose()

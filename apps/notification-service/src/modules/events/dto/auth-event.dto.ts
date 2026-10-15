@@ -1,6 +1,6 @@
 import { IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
-import { BaseAuthEvent } from '@masr3/libs';
+import { BaseAuthEvent } from '@masr3/libs/kafka';
 
 import KafkaEventDto from './kafka-event.dto';
 

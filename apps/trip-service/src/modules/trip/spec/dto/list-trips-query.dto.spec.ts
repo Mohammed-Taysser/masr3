@@ -24,7 +24,7 @@ describe('ListTripsQueryDto', () => {
   });
 
   it.each([
-    ['limit', '101'],
+    ['limit', '1001'],
     ['limit', '0'],
     ['page', '0'],
     ['status', 'FLYING'],

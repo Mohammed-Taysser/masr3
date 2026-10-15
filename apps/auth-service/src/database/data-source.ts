@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
-import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
+
+import { OutboxEventEntity } from '@masr3/libs/outbox';
 import UserEntity from '../modules/users/entities/user.entity';
 
 dotenv.config({ path: path.join(process.cwd(), 'apps/auth-service/.env') });

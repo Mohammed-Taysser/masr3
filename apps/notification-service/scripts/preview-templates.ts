@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { ConfigService } from '@nestjs/config';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
 
 import {
   DEFAULT_LOCALE,

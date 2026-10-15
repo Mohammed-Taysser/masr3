@@ -13,7 +13,8 @@ import {
   validateSync,
 } from 'class-validator';
 
-import { AUTH_SERVICE_URL_PATTERN } from '@masr3/libs';
+import { AUTH_SERVICE_URL_PATTERN } from '@masr3/libs/auth';
+import { QUEUE_NAME_PATTERN } from '@masr3/libs/outbox';
 
 enum EnvironmentEnum {
   DEVELOPMENT = 'development',
@@ -95,6 +96,14 @@ class EnvironmentVariables {
   @IsInt()
   @Min(1)
   OUTBOX_RETENTION_MS: number;
+
+  @IsString()
+  @Matches(QUEUE_NAME_PATTERN)
+  OUTBOX_RELAY_QUEUE: string;
+
+  @IsInt()
+  @Min(1)
+  OUTBOX_RELAY_LOCK_ID: number;
 
   @IsUrl({ require_tld: false, require_protocol: true })
   @Matches(AUTH_SERVICE_URL_PATTERN)

@@ -6,13 +6,13 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+import { UserRoleEnum } from '@masr3/libs/auth';
 import {
   AuditActionEnum,
   AuditActorTypeEnum,
   AuditChanges,
   AuditEntityTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import { UQ_AUDITS_EVENT_ID } from '../audit.constant';
 

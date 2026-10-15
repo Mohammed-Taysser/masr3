@@ -6,7 +6,7 @@ import {
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { MINIMUM_RSA_MODULUS_BITS } from '@masr3/libs';
+import { MINIMUM_RSA_MODULUS_BITS } from '@masr3/libs/auth';
 
 import {
   KEY_FILE_MODE,

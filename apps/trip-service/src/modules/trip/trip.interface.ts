@@ -1,4 +1,4 @@
-import { TripActorEnum, TripStatusEnum, TripTypeEnum } from '@masr3/libs';
+import { TripActorEnum, TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
 
 import TripEntity from './entities/trip.entity';
 

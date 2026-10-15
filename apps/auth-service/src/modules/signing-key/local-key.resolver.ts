@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 
-import type { KeyResolver } from '@masr3/libs';
+import type { KeyResolver } from '@masr3/libs/auth';
 
 import SigningKeyService from './signing-key.service';
 

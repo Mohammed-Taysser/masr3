@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import type { AuthenticatedUser, UserPrincipalValidator } from '@masr3/libs';
+import type {
+  AuthenticatedUser,
+  UserPrincipalValidator,
+} from '@masr3/libs/auth';
 
 import UsersService from './users.service';
 

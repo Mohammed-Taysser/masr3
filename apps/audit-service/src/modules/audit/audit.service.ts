@@ -9,11 +9,11 @@ import {
   Repository,
 } from 'typeorm';
 
-import { AuditActionRecordedEvent, dayjs } from '@masr3/libs';
+import { isUniqueViolation } from '@masr3/libs/database';
+import { dayjs } from '@masr3/libs/date';
+import { AuditActionRecordedEvent } from '@masr3/libs/kafka';
+import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
-import { isUniqueViolation } from '../../shared/database/postgres-error';
-import { paginate } from '../../shared/pagination/pagination';
-import { Paginated } from '../../shared/pagination/pagination.interface';
 import { UQ_AUDITS_EVENT_ID } from './audit.constant';
 import ListAuditsQueryDto from './dto/list-audits-query.dto';
 import AuditEntity from './entities/audit.entity';
@@ -58,11 +58,10 @@ class AuditService {
     const [items, total] = await this.auditRepository.findAndCount({
       where: AuditService.prepareListWhere(query),
       order: { occurredAt: 'DESC', id: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      ...paginationWindow(query),
     });
 
-    return paginate(items, total, query.page, query.limit);
+    return paginate(items, total, query);
   }
 
   async findOne(id: number): Promise<AuditEntity> {

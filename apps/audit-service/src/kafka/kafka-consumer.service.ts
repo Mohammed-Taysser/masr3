@@ -9,7 +9,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync, ValidationError } from 'class-validator';
 import { Consumer, EachMessagePayload, Kafka } from 'kafkajs';
 
-import { AuditEventMap, AuditKafkaTopic } from '@masr3/libs';
+import { AuditEventMap, AuditKafkaTopic } from '@masr3/libs/kafka';
 
 import AuditService from '../modules/audit/audit.service';
 import AuditActionRecordedEventDto from '../modules/audit/dto/audit-action-recorded-event.dto';

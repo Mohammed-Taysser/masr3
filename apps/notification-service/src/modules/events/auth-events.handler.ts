@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { dayjs } from '@masr3/libs/date';
 import {
   BaseAuthEvent,
-  dayjs,
   PasswordResetCompletedEvent,
   PasswordResetRequestedEvent,
   UserChangedPasswordEvent,
   UserLoggedInEvent,
   UserRegisteredEvent,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import { NotificationTypeEnum } from '../notification/notification.enum';
 import {

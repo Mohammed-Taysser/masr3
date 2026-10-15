@@ -16,7 +16,7 @@ the public keys in auth-service's JWKS. No service calls auth-service to check a
                                              verifies locally ─────────────────────────┘
 ```
 
-All code is shared from `@masr3/libs` (`libs/src/lib/auth/`). Services only wire it up and configure
+All code is shared from `@masr3/libs/auth` (`libs/src/lib/auth/`). Services only wire it up and configure
 it.
 
 ## Contents
@@ -222,7 +222,7 @@ trip-service is the reference wiring.
    itself, so each app lists it explicitly, after its throttler if it has one.
 
    ```ts
-   import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs';
+   import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs/auth';
 
    @Module({
      imports: [AppConfigModule, AuthenticationModule.register() /* , ... */],
@@ -236,8 +236,8 @@ trip-service is the reference wiring.
 4. Use the decorators:
 
    ```ts
-   import { CurrentUser, Public, RequireServiceScopes, Roles, ServiceScopeEnum, UserRoleEnum } from '@masr3/libs';
-   import type { AuthenticatedUser } from '@masr3/libs';
+   import { CurrentUser, Public, RequireServiceScopes, Roles, ServiceScopeEnum, UserRoleEnum } from '@masr3/libs/auth';
+   import type { AuthenticatedUser } from '@masr3/libs/auth';
 
    @Controller('trips')
    class TripController {

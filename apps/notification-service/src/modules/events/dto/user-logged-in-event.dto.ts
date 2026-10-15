@@ -1,6 +1,6 @@
 import { IsOptional, IsString } from 'class-validator';
 
-import { UserLoggedInEvent } from '@masr3/libs';
+import { UserLoggedInEvent } from '@masr3/libs/kafka';
 
 import AuthEventDto from './auth-event.dto';
 

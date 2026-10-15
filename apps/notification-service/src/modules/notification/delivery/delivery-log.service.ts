@@ -6,8 +6,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 
-import { Paginated } from '../../../shared/pagination/pagination.interface';
-import { paginate } from '../../../shared/pagination/pagination';
+import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
+
 import ListDeliveriesQueryDto from '../dto/list-deliveries-query.dto';
 import NotificationDeliveryEntity from '../entities/notification-delivery.entity';
 import { NOTIFICATION_CATALOG } from '../notification.constant';
@@ -28,12 +28,11 @@ class DeliveryLogService {
     const [items, total] = await this.deliveryRepository.findAndCount({
       where: DeliveryLogService.prepareListWhere(query),
       relations: { notification: true },
-      order: { id: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      ...paginationWindow(query),
     });
 
-    return paginate(items, total, query.page, query.limit);
+    return paginate(items, total, query);
   }
 
   async retry(id: number): Promise<NotificationDeliveryEntity> {

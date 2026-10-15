@@ -1,4 +1,4 @@
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 import ActiveUserValidator from '../active-user.validator';
 import UserEntity from '../entities/user.entity';

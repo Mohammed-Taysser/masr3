@@ -4,15 +4,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import {
-  AuthKafkaTopic,
-  BaseAuthEvent,
   BEARER_TOKEN_TYPE,
-  buildUserAuditActor,
-  EventPayload,
   REFRESH_TOKEN_AUDIENCE,
   TokenUseEnum,
   TokenVerifierService,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
+import {
+  AuthKafkaTopic,
+  BaseAuthEvent,
+  buildUserAuditActor,
+  EventPayload,
+} from '@masr3/libs/kafka';
 
 import ChangePasswordDto from './dto/change-password.dto';
 import ForgotPasswordDto from './dto/forgot-password.dto';

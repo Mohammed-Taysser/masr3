@@ -26,10 +26,9 @@ import {
   AuthenticatedUser,
   CurrentUser,
   Roles,
-  TripActorEnum,
-  TripStatusEnum,
   UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import CancelTripDto from './dto/cancel-trip.dto';
 import CreateTripDto from './dto/create-trip.dto';

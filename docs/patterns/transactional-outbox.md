@@ -1,9 +1,9 @@
 # Transactional outbox
 
-How a masr3 service publishes Kafka events that must never be lost or invented. trip-service is
-the reference (`apps/trip-service/src/modules/outbox/`). auth-service uses a copy for its audit
-events (`apps/auth-service/src/modules/outbox/`). Any service with events that matter can follow
-the same steps, and **every service that produces audit events must** (see
+How a masr3 service publishes Kafka events that must never be lost or invented. The outbox lives
+in libs (`libs/src/lib/outbox/`): `OutboxModule`, `OutboxService`, the relay and the
+`outbox_events` entity. auth-service, trip-service and vehicle-service register it. Any service
+with events that matter can, and **every service that produces audit events must** (see
 [audit-service](../services/audit-service.md)).
 
 ## The problem: a dual write
@@ -17,8 +17,8 @@ no transaction, so the work can fail half-way in either order:
 | Send, then commit to DB | The commit fails or rolls back                | **Phantom event.** Consumers act on a change that never happened. |
 
 Retrying the send in a `catch` doesn't fix the first case: the process can die before it retries.
-auth-service's `auth.*` events are published best-effort and accept the first case (see "When not
-to use it"); its audit events go through the outbox.
+auth-service's sign-in and password `auth.*` events are published best-effort and accept the first
+case (see "When not to use it"); its audit events and `auth.user-changed` go through the outbox.
 
 ## The fix
 
@@ -43,8 +43,9 @@ both failure cases.
 
 ## The relay, step by step
 
-A BullMQ job scheduler adds a `RELAY` job every `OUTBOX_POLL_INTERVAL_MS`, and
-`OutboxRelayProcessor` runs each one. Each run ("tick") is one Postgres transaction:
+A BullMQ job scheduler (`<OUTBOX_RELAY_QUEUE>-every-interval`) adds a `RELAY` job to the
+service's `OUTBOX_RELAY_QUEUE` every `OUTBOX_POLL_INTERVAL_MS`, and the relay processor runs each
+one. Each run ("tick") is one Postgres transaction:
 
 1. **`SELECT pg_try_advisory_xact_lock(OUTBOX_RELAY_LOCK_ID)`.** If it returns false, another
    instance is relaying right now, so this tick does nothing. Only one relay ever publishes at a
@@ -112,26 +113,37 @@ is shared between clients at transaction boundaries.
 
 1. **Contract in `libs/src/lib/kafka/<domain>/`:** a topic enum, payloads that extend
    `BaseKafkaEvent` (`eventId`, `occurredAt`), and an `<Domain>EventMap`.
-2. **Table and migration:** an `outbox_events` entity (copy
-   `apps/trip-service/src/modules/outbox/entities/outbox-event.entity.ts`), then
-   `migrate-generate` with the CLI. Add the entity to `database.module.ts` and `data-source.ts`.
-3. **Enqueue inside the business transaction:** call `outboxService.enqueue(manager, topic, event, key)`
-   with the **transaction's** `manager`, never a repository. Otherwise the row escapes the
-   transaction.
-4. **Relay and producer:** copy `outbox-relay.service.ts`, `outbox-relay.processor.ts` and
-   `kafka/kafka-producer.service.ts`, plus `queue/queue.module.ts` for the Redis connection
-   (`REDIS_HOST` / `REDIS_PORT`).
-   Give the service its own `OUTBOX_RELAY_LOCK_ID`. Advisory locks are per database, so this only
-   matters if two services ever share one, but distinct ids cost nothing.
-   **Give the queue and scheduler their own names** (auth-service: `AUTH-OUTBOX-RELAY`,
-   `AUTH-OUTBOX-RELAY-EVERY-INTERVAL`). Every service shares one Redis with BullMQ's default
-   prefix, so a second `OUTBOX-RELAY` would be the same queue: trip-service's worker would take
-   the other service's relay jobs and relay its own outbox instead.
-5. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `REDIS_HOST`, `REDIS_PORT`,
-   `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`.
-6. **Topic:** add a `kafka:create-topics` target for the topics this service owns. Topics are
+2. **Event map:** `src/kafka/kafka.interface.ts` declares `OutboxEventMap`, every topic
+   the service publishes through its outbox (for example `TripEventMap & AuditEventMap`).
+3. **Register the module once, in `AppModule`:**
+
+   ```ts
+   OutboxModule.forRoot({ imports: [KafkaModule], producer: KafkaProducerService }),
+   ```
+
+   It is global. `producer` is the service's Kafka producer (copy
+   `kafka/kafka-producer.service.ts`); `queue/queue.module.ts` gives BullMQ its Redis connection.
+
+4. **Table and migration:** add `OutboxEventEntity` (from `@masr3/libs`) to `database.module.ts`
+   and `data-source.ts`, then `migrate-generate` with the CLI.
+5. **Enqueue inside the business transaction:** inject `OutboxService<OutboxEventMap>` and call
+   `outboxService.enqueue(manager, topic, event, key)` with the **transaction's** `manager`, never
+   a repository. Otherwise the row escapes the transaction. The map type makes an unknown topic or
+   a wrong payload a compile error.
+6. **Env** (required): `KAFKA_BROKER`, `KAFKA_CLIENT_ID`, `REDIS_HOST`, `REDIS_PORT`,
+   `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`, and the service's own
+   `OUTBOX_RELAY_QUEUE` and `OUTBOX_RELAY_LOCK_ID`.
+   - **The queue name must be unique to the service**: lowercase kebab-case with the service
+     prefix (`auth-outbox-relay`, `trip-outbox-relay`, `vehicle-outbox-relay`); env validation
+     rejects anything else (`QUEUE_NAME_PATTERN`). Every service shares one Redis with BullMQ's default
+     prefix, so two services with the same name would share one queue: each worker would take
+     the other's relay jobs.
+   - **The lock id is the service port plus three digits** (7000001, 7002001, 7004001). Advisory
+     locks are per database, so this only matters if two services ever share one, but distinct ids
+     cost nothing.
+7. **Topic:** add a `kafka:create-topics` target for the topics this service owns. Topics are
    never auto-created. `audit.action-recorded` is created by audit-service.
-7. **Consumers:** deduplicate on `eventId`.
+8. **Consumers:** deduplicate on `eventId`, or apply snapshots idempotently.
 
 ## When not to use it
 

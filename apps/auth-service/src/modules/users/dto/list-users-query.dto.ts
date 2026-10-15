@@ -1,19 +1,12 @@
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-} from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
+import { PaginationQueryDto } from '@masr3/libs/pagination';
 
 import { SortOrder, UserSortBy } from '../users.enum';
 
-class ListUsersQueryDto {
+class ListUsersQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     example: '',
     description: 'Search by first name, last name, or email.',
@@ -41,34 +34,6 @@ class ListUsersQueryDto {
   })
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiPropertyOptional({
-    type: Number,
-    description: 'Page number.',
-    example: 1,
-    default: 1,
-    minimum: 1,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @ApiPropertyOptional({
-    description: 'Number of users per page.',
-    type: Number,
-    example: 20,
-    default: 20,
-    minimum: 1,
-    maximum: 1000,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(1000)
-  limit = 20;
 
   @ApiPropertyOptional({
     enum: UserSortBy,

@@ -2,11 +2,14 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
-import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs';
+import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs/auth';
+import { OutboxModule } from '@masr3/libs/outbox';
 
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
+import KafkaModule from './kafka/kafka.module';
+import KafkaProducerService from './kafka/kafka-producer.service';
 import QueueModule from './queue/queue.module';
 import AuthModule from './modules/auth/auth.module';
 import ServiceClientModule from './modules/service-client/service-client.module';
@@ -22,6 +25,10 @@ import AppThrottlerModule from './throttling/AppThrottlerModule.module';
     AppThrottlerModule,
     DatabaseModule,
     QueueModule,
+    OutboxModule.forRoot({
+      imports: [KafkaModule],
+      producer: KafkaProducerService,
+    }),
     AuthenticationModule.register({
       imports: [SigningKeyModule, UsersModule],
       keyResolver: LocalKeyResolver,

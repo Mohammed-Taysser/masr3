@@ -13,7 +13,7 @@ import {
   validateSync,
 } from 'class-validator';
 
-import { AUTH_SERVICE_URL_PATTERN } from '@masr3/libs';
+import { AUTH_SERVICE_URL_PATTERN } from '@masr3/libs/auth';
 
 enum EnvironmentEnum {
   DEVELOPMENT = 'development',

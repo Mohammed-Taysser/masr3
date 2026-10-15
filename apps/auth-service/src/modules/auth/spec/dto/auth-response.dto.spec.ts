@@ -2,7 +2,7 @@ import { instanceToPlain } from 'class-transformer';
 
 import AuthResponseDto from '../../dto/auth-response.dto';
 import UserResponseDto from '../../../users/dto/user-response.dto';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 describe('AuthResponseDto', () => {
   it('exposes both tokens, their type, the lifetime and the nested user', () => {

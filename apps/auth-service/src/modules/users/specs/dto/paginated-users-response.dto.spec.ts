@@ -2,7 +2,7 @@ import { instanceToPlain, plainToInstance } from 'class-transformer';
 
 import PaginatedUsersResponseDto from '../../dto/paginated-users-response.dto';
 import UserEntity from '../../entities/user.entity';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 describe('PaginatedUsersResponseDto', () => {
   const user = Object.assign(new UserEntity(), {

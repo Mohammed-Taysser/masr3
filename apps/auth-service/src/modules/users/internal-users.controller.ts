@@ -17,7 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
-import { RequireServiceScopes, ServiceScopeEnum } from '@masr3/libs';
+import { RequireServiceScopes, ServiceScopeEnum } from '@masr3/libs/auth';
 
 import UserContactResponseDto from './dto/user-contact-response.dto';
 import UsersService from './users.service';

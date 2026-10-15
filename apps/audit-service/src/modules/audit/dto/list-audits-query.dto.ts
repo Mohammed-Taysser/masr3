@@ -6,19 +6,19 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
-  Max,
   MinLength,
   Min,
 } from 'class-validator';
 
+import { UserRoleEnum } from '@masr3/libs/auth';
 import {
   AuditActionEnum,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
+import { PaginationQueryDto } from '@masr3/libs/pagination';
 
-class ListAuditsQueryDto {
+class ListAuditsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     example: 'trip-service',
     description: 'Only entries produced by this service (its SERVICE_NAME).',
@@ -102,34 +102,6 @@ class ListAuditsQueryDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   occurredTo?: string;
-
-  @ApiPropertyOptional({
-    type: Number,
-    description: 'Page number.',
-    example: 1,
-    default: 1,
-    minimum: 1,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @ApiPropertyOptional({
-    type: Number,
-    description: 'Entries per page.',
-    example: 20,
-    default: 20,
-    minimum: 1,
-    maximum: 100,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit = 20;
 }
 
 export default ListAuditsQueryDto;

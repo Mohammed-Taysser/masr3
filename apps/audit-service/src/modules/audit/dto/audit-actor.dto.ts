@@ -7,7 +7,8 @@ import {
   Min,
 } from 'class-validator';
 
-import { AuditActor, AuditActorTypeEnum, UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
+import { AuditActor, AuditActorTypeEnum } from '@masr3/libs/kafka';
 
 import { POSTGRES_INT_MAX } from '../audit.constant';
 

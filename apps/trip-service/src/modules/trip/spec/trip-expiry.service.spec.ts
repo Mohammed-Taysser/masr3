@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { FindOperator, Repository } from 'typeorm';
 
-import { dayjs, TripActorEnum, TripStatusEnum } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import TripEntity from '../entities/trip.entity';
 import TripExpiryService from '../trip-expiry.service';

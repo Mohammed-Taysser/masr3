@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import { TRIP_TRANSITIONS } from '../trip.constant';
 import { assertTransitionAllowed } from '../trip.policy';

@@ -4,12 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  AuthenticatedUser,
-  TripActorEnum,
-  TripStatusEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import TripEntity from './entities/trip.entity';
 import { TRIP_TRANSITIONS } from './trip.constant';

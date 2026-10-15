@@ -43,7 +43,7 @@ describe('ListAuditsQueryDto', () => {
   });
 
   it.each([
-    ['limit', '101'],
+    ['limit', '1001'],
     ['page', '0'],
     ['service', ''],
     ['action', 'FLEW'],

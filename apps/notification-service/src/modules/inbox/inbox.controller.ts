@@ -20,7 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { AuthenticatedUser, CurrentUser } from '@masr3/libs';
+import { AuthenticatedUser, CurrentUser } from '@masr3/libs/auth';
 
 import CountResponseDto from './dto/count-response.dto';
 import InboxItemResponseDto from './dto/inbox-item-response.dto';

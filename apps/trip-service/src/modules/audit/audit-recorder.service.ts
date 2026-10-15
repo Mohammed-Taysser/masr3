@@ -6,9 +6,10 @@ import {
   AUDIT_EVENT_SCHEMA_VERSION,
   AuditKafkaTopic,
   buildAuditEventKey,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
 
-import OutboxService from '../outbox/outbox.service';
+import { OutboxEventMap } from '../../kafka/kafka.interface';
 import { AuditRecord } from './audit.interface';
 
 @Injectable()
@@ -16,7 +17,7 @@ class AuditRecorderService {
   private readonly serviceName: string;
 
   constructor(
-    private readonly outboxService: OutboxService,
+    private readonly outboxService: OutboxService<OutboxEventMap>,
     configService: ConfigService,
   ) {
     this.serviceName = configService.getOrThrow<string>('SERVICE_NAME');

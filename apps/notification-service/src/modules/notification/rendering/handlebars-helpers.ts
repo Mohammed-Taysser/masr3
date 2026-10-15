@@ -1,6 +1,6 @@
 import { HelperDelegate } from 'handlebars';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
 
 // Formatting lives in templates through these helpers, so handlers pass raw
 // values. Handlebars appends its options object as an extra last argument,

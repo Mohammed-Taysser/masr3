@@ -134,10 +134,10 @@ const CATEGORY_ACCENTS: Record<NotificationCategoryEnum, string> = {
 
 // BullMQ. Only channels with a real provider have a queue; the others are
 // recorded as skipped and previewed in the log.
-const NOTIFICATION_EMAIL_QUEUE = 'NOTIFICATION-EMAIL';
-const NOTIFICATION_IN_APP_QUEUE = 'NOTIFICATION-IN-APP';
-const NOTIFICATION_SWEEP_QUEUE = 'NOTIFICATION-SWEEP';
-const NOTIFICATION_SWEEP_SCHEDULER_ID = 'NOTIFICATION-DELIVERY-SWEEP';
+const NOTIFICATION_EMAIL_QUEUE = 'notification-email';
+const NOTIFICATION_IN_APP_QUEUE = 'notification-in-app';
+const NOTIFICATION_SWEEP_QUEUE = 'notification-sweep';
+const NOTIFICATION_SWEEP_SCHEDULER_ID = 'notification-delivery-sweep';
 
 const DELIVERY_ATTEMPTS = 5;
 const DELIVERY_BACKOFF_MS = 10000;

@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
+import { UserContact } from '@masr3/libs/auth';
 import {
   TripActorEnum,
   TripStatusChangedEvent,
   TripStatusEnum,
-  UserContact,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuthServiceClient from '../../clients/auth-service.client';
 import { NotificationTypeEnum } from '../notification/notification.enum';

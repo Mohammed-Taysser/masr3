@@ -13,7 +13,7 @@ import {
   JWT_ALGORITHM,
   MINIMUM_RSA_MODULUS_BITS,
   TOKEN_ISSUER,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import { JWK_SIGNATURE_USE, RSA_KEY_TYPE } from './signing-key.constant';
 import type { PublicJsonWebKey, PublishedKey } from './signing-key.interface';

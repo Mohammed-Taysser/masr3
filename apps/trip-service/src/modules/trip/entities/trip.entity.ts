@@ -8,14 +8,12 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { TripStatusEnum, TripTypeEnum } from '@masr3/libs';
+import { TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
+import { MONEY_COLUMN_OPTIONS } from '@masr3/libs/money';
 
-import { decimalTransformer } from '../../../shared/transformers/decimal.transformer';
 import {
   CUSTOMER_ACTIVE_TRIP_STATUSES,
   DRIVER_ACTIVE_TRIP_STATUSES,
-  FARE_PRECISION,
-  FARE_SCALE,
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
@@ -77,21 +75,10 @@ class TripEntity {
   @Column()
   dropoffAddress: string;
 
-  @Column({
-    type: 'decimal',
-    precision: FARE_PRECISION,
-    scale: FARE_SCALE,
-    transformer: decimalTransformer,
-  })
+  @Column({ ...MONEY_COLUMN_OPTIONS })
   proposedFare: number;
 
-  @Column({
-    type: 'decimal',
-    precision: FARE_PRECISION,
-    scale: FARE_SCALE,
-    nullable: true,
-    transformer: decimalTransformer,
-  })
+  @Column({ ...MONEY_COLUMN_OPTIONS, nullable: true })
   agreedFare: number | null;
 
   @Column({ type: 'varchar', nullable: true })

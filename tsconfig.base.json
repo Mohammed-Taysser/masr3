@@ -15,7 +15,13 @@
     "skipDefaultLibCheck": true,
     "strict": false,
     "paths": {
-      "@masr3/libs": ["./libs/src/index.ts"],
+      "@masr3/libs/auth": ["./libs/src/lib/auth/index.ts"],
+      "@masr3/libs/database": ["./libs/src/lib/database/index.ts"],
+      "@masr3/libs/date": ["./libs/src/lib/date/index.ts"],
+      "@masr3/libs/kafka": ["./libs/src/lib/kafka/index.ts"],
+      "@masr3/libs/money": ["./libs/src/lib/money/index.ts"],
+      "@masr3/libs/outbox": ["./libs/src/lib/outbox/index.ts"],
+      "@masr3/libs/pagination": ["./libs/src/lib/pagination/index.ts"],
       "@masr3/libs/timezone": ["./libs/src/lib/date/timezone.ts"]
     }
   },

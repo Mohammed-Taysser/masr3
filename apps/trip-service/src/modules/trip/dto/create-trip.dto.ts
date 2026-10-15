@@ -3,20 +3,16 @@ import {
   IsEnum,
   IsLatitude,
   IsLongitude,
-  IsNumber,
   IsOptional,
   IsPhoneNumber,
-  IsPositive,
   IsString,
-  Max,
   MaxLength,
   MinLength,
   ValidateIf,
 } from 'class-validator';
 
-import { TripTypeEnum } from '@masr3/libs';
-
-import { FARE_SCALE, MAX_FARE } from '../trip.constant';
+import { TripTypeEnum } from '@masr3/libs/kafka';
+import { IsMoney } from '@masr3/libs/money';
 
 const isParcel = (dto: CreateTripDto) => dto.type === TripTypeEnum.PARCEL;
 
@@ -57,9 +53,7 @@ class CreateTripDto {
     example: 85.5,
     description: 'The fare the customer proposes, in EGP (2 decimals).',
   })
-  @IsNumber({ maxDecimalPlaces: FARE_SCALE })
-  @IsPositive()
-  @Max(MAX_FARE)
+  @IsMoney()
   proposedFare: number;
 
   @ApiPropertyOptional({

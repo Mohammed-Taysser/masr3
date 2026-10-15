@@ -7,9 +7,10 @@ import {
   AuditEntityTypeEnum,
   AuditKafkaTopic,
   SYSTEM_AUDIT_ACTOR,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
 
-import OutboxService from '../../outbox/outbox.service';
+import { OutboxEventMap } from '../../../kafka/kafka.interface';
 import AuditRecorderService from '../audit-recorder.service';
 import { AuditRecord } from '../audit.interface';
 
@@ -25,7 +26,7 @@ describe('AuditRecorderService', () => {
   it('enqueues the envelope in the caller’s transaction, keyed by entity, with SERVICE_NAME as the service', async () => {
     const outboxService = {
       enqueue: jest.fn(),
-    } as unknown as jest.Mocked<OutboxService>;
+    } as unknown as jest.Mocked<OutboxService<OutboxEventMap>>;
     const configService = {
       getOrThrow: jest.fn().mockReturnValue('rating-service'),
     } as unknown as ConfigService;

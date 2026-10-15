@@ -18,7 +18,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 
-import { Public } from '@masr3/libs';
+import { Public } from '@masr3/libs/auth';
 
 import AuthService from './auth.service';
 import AccessTokenResponseDto from './dto/access-token-response.dto';

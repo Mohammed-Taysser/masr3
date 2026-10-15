@@ -1,4 +1,4 @@
-import { TripActorEnum, TripStatusEnum } from '@masr3/libs';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import { TripCancelledByEnum } from '../notification/notification.enum';
 

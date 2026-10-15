@@ -2,7 +2,7 @@ import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
-import { ServiceScopeEnum, ServiceTokenProvider } from '@masr3/libs';
+import { ServiceScopeEnum, ServiceTokenProvider } from '@masr3/libs/auth';
 
 import AuthServiceClient from '../auth-service.client';
 

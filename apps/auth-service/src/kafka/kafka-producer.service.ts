@@ -7,7 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Kafka, Producer, TopicMessages } from 'kafkajs';
 
-import { AuthEventMap, createKafkaEvent, EventPayload } from '@masr3/libs';
+import {
+  AuthEventMap,
+  createKafkaEvent,
+  EventPayload,
+} from '@masr3/libs/kafka';
 
 @Injectable()
 class KafkaProducerService implements OnModuleInit, OnModuleDestroy {

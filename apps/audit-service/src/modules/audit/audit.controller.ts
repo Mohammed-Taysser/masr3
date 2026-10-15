@@ -15,7 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Roles, UserRoleEnum } from '@masr3/libs';
+import { Roles, UserRoleEnum } from '@masr3/libs/auth';
 
 import AuditService from './audit.service';
 import AuditResponseDto from './dto/audit-response.dto';

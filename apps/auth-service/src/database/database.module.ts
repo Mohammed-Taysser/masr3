@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
+
+import { OutboxEventEntity } from '@masr3/libs/outbox';
 import UserEntity from '../modules/users/entities/user.entity';
 
 @Module({

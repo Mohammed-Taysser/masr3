@@ -1,12 +1,7 @@
 import 'reflect-metadata';
 
-import {
-  AuditActor,
-  AuditActorTypeEnum,
-  AuthenticatedUser,
-  ROLES_KEY,
-  UserRoleEnum,
-} from '@masr3/libs';
+import { AuthenticatedUser, ROLES_KEY, UserRoleEnum } from '@masr3/libs/auth';
+import { AuditActor, AuditActorTypeEnum } from '@masr3/libs/kafka';
 
 import CreateUserDto from '../dto/create-user.dto';
 import ListUsersQueryDto from '../dto/list-users-query.dto';

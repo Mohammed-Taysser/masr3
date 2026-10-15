@@ -10,7 +10,7 @@ import ForgotPasswordDto from '../dto/forgot-password.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import ChangePasswordDto from '../dto/change-password.dto';
 import UserEntity from '../../users/entities/user.entity';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 describe('AuthController', () => {
   let controller: AuthController;

@@ -13,7 +13,7 @@ import {
   TripStatusChangedEvent,
   TripStatusEnum,
   TripTypeEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import KafkaEventDto from './kafka-event.dto';
 

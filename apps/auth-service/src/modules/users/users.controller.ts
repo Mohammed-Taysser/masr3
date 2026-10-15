@@ -24,11 +24,11 @@ import {
 
 import {
   AuthenticatedUser,
-  buildUserAuditActor,
   CurrentUser,
   Roles,
   UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
+import { buildUserAuditActor } from '@masr3/libs/kafka';
 
 import CreateUserDto from './dto/create-user.dto';
 import ListUsersQueryDto from './dto/list-users-query.dto';

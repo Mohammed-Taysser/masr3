@@ -1,6 +1,6 @@
 import { IsISO8601, IsNotEmpty, IsString } from 'class-validator';
 
-import { PasswordResetRequestedEvent } from '@masr3/libs';
+import { PasswordResetRequestedEvent } from '@masr3/libs/kafka';
 
 import AuthEventDto from './auth-event.dto';
 

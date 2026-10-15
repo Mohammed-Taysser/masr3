@@ -1,7 +1,7 @@
 import { instanceToPlain } from 'class-transformer';
 
 import UserResponseDto from '../../dto/user-response.dto';
-import { UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
 
 describe('UserResponseDto', () => {
   it('exposes the expected user fields', () => {

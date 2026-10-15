@@ -1,6 +1,6 @@
 import { IsISO8601, IsNotEmpty, IsString } from 'class-validator';
 
-import { BaseKafkaEvent } from '@masr3/libs';
+import { BaseKafkaEvent } from '@masr3/libs/kafka';
 
 // The fields every event carries. A message without them can never be
 // deduplicated or dated, so the consumer skips it.

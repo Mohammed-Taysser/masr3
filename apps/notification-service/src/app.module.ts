@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 
-import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs';
+import { AuthenticationGuard, AuthenticationModule } from '@masr3/libs/auth';
 
 import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';

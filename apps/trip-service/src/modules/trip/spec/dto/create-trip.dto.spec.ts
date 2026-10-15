@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
-import { TripTypeEnum } from '@masr3/libs';
+import { TripTypeEnum } from '@masr3/libs/kafka';
 
 import CreateTripDto from '../../dto/create-trip.dto';
 

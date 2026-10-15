@@ -36,7 +36,20 @@ export default [
       '**/*.cjs',
       '**/*.mjs',
     ],
-    // Override or add rules here
-    rules: {},
+    rules: {
+      // Import libs by domain (@masr3/libs/auth, …/outbox); there is no root barrel.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@masr3/libs',
+              message:
+                'Import from a libs domain instead, e.g. @masr3/libs/auth or @masr3/libs/pagination.',
+            },
+          ],
+        },
+      ],
+    },
   },
 ];

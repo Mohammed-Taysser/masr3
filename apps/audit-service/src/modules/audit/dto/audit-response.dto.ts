@@ -1,13 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
+import { UserRoleEnum } from '@masr3/libs/auth';
 import {
   AuditActionEnum,
   AuditActorTypeEnum,
   AuditChanges,
   AuditEntityTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 class AuditResponseDto {
   @Expose()

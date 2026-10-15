@@ -1,4 +1,4 @@
-import { ServiceScopeEnum } from '@masr3/libs';
+import { ServiceScopeEnum } from '@masr3/libs/auth';
 
 interface ServiceClient {
   secretVariable: string;

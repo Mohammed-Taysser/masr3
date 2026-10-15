@@ -1,6 +1,6 @@
 import { IsInt, IsNotEmpty, IsString, Max, Min } from 'class-validator';
 
-import { AuditEntityReference, AuditEntityTypeEnum } from '@masr3/libs';
+import { AuditEntityReference, AuditEntityTypeEnum } from '@masr3/libs/kafka';
 
 import { POSTGRES_INT_MAX } from '../audit.constant';
 

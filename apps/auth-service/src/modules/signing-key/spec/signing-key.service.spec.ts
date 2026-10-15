@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { TOKEN_ISSUER, USER_TOKEN_AUDIENCE } from '@masr3/libs';
+import { TOKEN_ISSUER, USER_TOKEN_AUDIENCE } from '@masr3/libs/auth';
 
 import LocalKeyResolver from '../local-key.resolver';
 import SigningKeyService from '../signing-key.service';

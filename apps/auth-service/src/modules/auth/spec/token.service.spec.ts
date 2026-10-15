@@ -6,7 +6,7 @@ import {
   TokenUseEnum,
   USER_TOKEN_AUDIENCE,
   UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import TokenService from '../services/token.service';
 import SigningKeyService from '../../signing-key/signing-key.service';

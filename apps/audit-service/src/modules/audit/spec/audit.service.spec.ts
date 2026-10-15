@@ -1,13 +1,13 @@
 import { NotFoundException } from '@nestjs/common';
 import { QueryFailedError, Repository } from 'typeorm';
 
+import { UserRoleEnum } from '@masr3/libs/auth';
 import {
   AuditActionEnum,
   AuditActionRecordedEvent,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuditService from '../audit.service';
 import { UQ_AUDITS_EVENT_ID } from '../audit.constant';

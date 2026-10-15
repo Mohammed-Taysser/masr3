@@ -7,7 +7,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-import { ServiceScopeEnum } from '@masr3/libs';
+import { ServiceScopeEnum } from '@masr3/libs/auth';
 
 class CreateServiceTokenDto {
   @ApiProperty({

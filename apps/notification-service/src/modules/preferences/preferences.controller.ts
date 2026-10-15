@@ -6,7 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { AuthenticatedUser, CurrentUser } from '@masr3/libs';
+import { AuthenticatedUser, CurrentUser } from '@masr3/libs/auth';
 
 import ChannelPreferencesResponseDto from './dto/channel-preferences-response.dto';
 import UpdateChannelPreferencesDto from './dto/update-channel-preferences.dto';

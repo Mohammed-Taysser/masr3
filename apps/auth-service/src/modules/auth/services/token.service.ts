@@ -4,12 +4,12 @@ import { createHash, randomBytes } from 'crypto';
 
 import {
   AccessTokenClaims,
-  dayjs,
   REFRESH_TOKEN_AUDIENCE,
   RefreshTokenClaims,
   TokenUseEnum,
   USER_TOKEN_AUDIENCE,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 
 import SigningKeyService from '../../signing-key/signing-key.service';
 import UserEntity from '../../users/entities/user.entity';

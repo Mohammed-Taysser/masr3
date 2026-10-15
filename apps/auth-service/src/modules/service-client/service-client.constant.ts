@@ -1,4 +1,4 @@
-import { ServiceScopeEnum } from '@masr3/libs';
+import { ServiceScopeEnum } from '@masr3/libs/auth';
 
 import type { ServiceClient } from './service-client.interface';
 

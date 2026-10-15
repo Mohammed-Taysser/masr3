@@ -15,7 +15,7 @@ import {
   AuditActionEnum,
   AuditActionRecordedEvent,
   AuditChanges,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import AuditActorDto from './audit-actor.dto';
 import AuditEntityReferenceDto from './audit-entity-reference.dto';

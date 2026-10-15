@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { dayjs } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
 
 import NotificationDeliveryEntity from '../../entities/notification-delivery.entity';
 import NotificationEntity from '../../entities/notification.entity';

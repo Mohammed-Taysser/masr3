@@ -3,7 +3,7 @@ import {
   AuditActor,
   AuditChanges,
   AuditEntityReference,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 // What a feature knows about one audited action. The recorder adds the rest of
 // the envelope: schemaVersion, SERVICE_NAME, eventId, occurredAt and the key.

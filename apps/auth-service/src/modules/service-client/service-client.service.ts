@@ -14,7 +14,7 @@ import {
   ServiceTokenClaims,
   TokenUseEnum,
   USER_TOKEN_AUDIENCE,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import SigningKeyService from '../signing-key/signing-key.service';
 import CreateServiceTokenDto from './dto/create-service-token.dto';

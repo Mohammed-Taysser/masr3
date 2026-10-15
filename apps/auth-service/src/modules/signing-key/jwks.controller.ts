@@ -1,7 +1,7 @@
 import { Controller, Get, Header } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { JWKS_PATH, Public } from '@masr3/libs';
+import { JWKS_PATH, Public } from '@masr3/libs/auth';
 
 import { JWKS_CACHE_CONTROL } from './signing-key.constant';
 import SigningKeyService from './signing-key.service';

@@ -20,7 +20,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 
-import { Public, SERVICE_TOKENS_PATH } from '@masr3/libs';
+import { Public, SERVICE_TOKENS_PATH } from '@masr3/libs/auth';
 
 import CreateServiceTokenDto from './dto/create-service-token.dto';
 import ServiceTokenResponseDto from './dto/service-token-response.dto';

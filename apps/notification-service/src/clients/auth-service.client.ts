@@ -12,7 +12,7 @@ import {
   ServiceScopeEnum,
   ServiceTokenProvider,
   UserContact,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import { AUTH_SERVICE_AUDIENCE } from './auth-service-client.constant';
 

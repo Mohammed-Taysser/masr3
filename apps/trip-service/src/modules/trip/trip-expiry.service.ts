@@ -11,7 +11,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { LessThanOrEqual, Repository } from 'typeorm';
 
-import { dayjs, TripActorEnum, TripStatusEnum } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import TripEntity from './entities/trip.entity';
 import {
