@@ -1,14 +1,9 @@
-import { TripActorEnum, TripStatusEnum, UserRoleEnum } from '@masr3/libs';
+import { UserRoleEnum } from '@masr3/libs/auth';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
-import type TripOfferEntity from './entities/trip-offer.entity';
 import type TripEntity from './entities/trip.entity';
 
 const TRIP_CURRENCY = 'EGP';
-
-// decimal(10, 2): up to 99,999,999.99 TRIP_CURRENCY.
-const FARE_PRECISION = 10;
-const FARE_SCALE = 2;
-const MAX_FARE = 99999999.99;
 
 // from → to → who may make that move.
 const TRIP_TRANSITIONS: Readonly<
@@ -61,10 +56,9 @@ const DRIVER_ACTIVE_TRIP_STATUSES: readonly TripStatusEnum[] = [
 
 const UQ_TRIPS_ACTIVE_CUSTOMER = 'UQ_trips_active_customer';
 const UQ_TRIPS_ACTIVE_DRIVER = 'UQ_trips_active_driver';
-const UQ_TRIP_OFFERS_PENDING_DRIVER = 'UQ_trip_offers_pending_driver';
 
-const TRIP_EXPIRY_QUEUE = 'TRIP-EXPIRY';
-const TRIP_EXPIRY_SWEEP_SCHEDULER_ID = 'TRIP-EXPIRY-SWEEP';
+const TRIP_EXPIRY_QUEUE = 'trip-expiry';
+const TRIP_EXPIRY_SWEEP_SCHEDULER_ID = 'trip-expiry-sweep';
 
 const ROLE_TO_TRIP_ACTOR: Readonly<Record<UserRoleEnum, TripActorEnum>> = {
   [UserRoleEnum.CUSTOMER]: TripActorEnum.CUSTOMER,
@@ -95,28 +89,16 @@ const TRIP_AUDITED_FIELDS: readonly (keyof TripEntity & string)[] = [
   'expiresAt',
 ];
 
-const TRIP_OFFER_AUDITED_FIELDS: readonly (keyof TripOfferEntity & string)[] = [
-  'tripId',
-  'driverId',
-  'amount',
-  'status',
-];
-
 export {
   TRIP_CURRENCY,
-  FARE_PRECISION,
-  FARE_SCALE,
-  MAX_FARE,
   TRIP_TRANSITIONS,
   CUSTOMER_ACTIVE_TRIP_STATUSES,
   DRIVER_ACTIVE_TRIP_STATUSES,
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
-  UQ_TRIP_OFFERS_PENDING_DRIVER,
   ROLE_TO_TRIP_ACTOR,
   TRIP_ACTOR_TO_ROLE,
   TRIP_AUDITED_FIELDS,
-  TRIP_OFFER_AUDITED_FIELDS,
   TRIP_EXPIRY_QUEUE,
   TRIP_EXPIRY_SWEEP_SCHEDULER_ID,
 };

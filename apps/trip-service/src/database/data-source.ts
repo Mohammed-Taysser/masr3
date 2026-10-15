@@ -2,9 +2,10 @@ import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
-import TripOfferEntity from '../modules/trip/entities/trip-offer.entity';
+
+import { OutboxEventEntity } from '@masr3/libs/outbox';
+import TripOfferEntity from '../modules/trip-offer/entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../modules/trip/entities/trip-status-history.entity';
-import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
 import TripEntity from '../modules/trip/entities/trip.entity';
 
 dotenv.config({

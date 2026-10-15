@@ -16,31 +16,30 @@ import {
   Repository,
 } from 'typeorm';
 
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { isUniqueViolation } from '@masr3/libs/database';
+import { dayjs } from '@masr3/libs/date';
 import {
   AuditActionEnum,
   AuditActor,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
-  AuthenticatedUser,
   buildAuditChanges,
-  dayjs,
   EventPayload,
+  SYSTEM_AUDIT_ACTOR,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusChangedEvent,
   TripStatusEnum,
-  SYSTEM_AUDIT_ACTOR,
   TripTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
+import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
-import { isUniqueViolation } from '../../shared/database/postgres-error';
-import { Paginated } from '../../shared/pagination/pagination.interface';
-import { paginate } from '../../shared/pagination/pagination';
 import AuditRecorderService from '../audit/audit-recorder.service';
-import OutboxService from '../outbox/outbox.service';
+import { OutboxEventMap } from '../../kafka/kafka.interface';
 import ListTripsQueryDto from './dto/list-trips-query.dto';
-import TripOfferEntity from './entities/trip-offer.entity';
+import TripOfferEntity from '../trip-offer/entities/trip-offer.entity';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import {
@@ -51,7 +50,8 @@ import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from './trip.constant';
-import { TripExpiryJobEnum, TripOfferStatusEnum } from './trip.enum';
+import { TripExpiryJobEnum } from './trip.enum';
+import { TripOfferStatusEnum } from '../trip-offer/trip-offer.enum';
 import {
   CreateTripCommand,
   ExpireTripJobData,
@@ -70,7 +70,7 @@ class TripService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
-    private readonly outboxService: OutboxService,
+    private readonly outboxService: OutboxService<OutboxEventMap>,
     private readonly auditRecorder: AuditRecorderService,
     @InjectRepository(TripEntity)
     private readonly tripRepository: Repository<TripEntity>,
@@ -338,11 +338,10 @@ class TripService {
     const [items, total] = await this.tripRepository.findAndCount({
       where,
       order: { createdAt: 'DESC', id: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      ...paginationWindow(query),
     });
 
-    return paginate(items, total, query.page, query.limit);
+    return paginate(items, total, query);
   }
 
   // A driver lists the trips they drive, everyone else the trips they asked for.

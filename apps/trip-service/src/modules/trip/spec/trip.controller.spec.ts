@@ -1,13 +1,6 @@
-import {
-  AuthenticatedUser,
-  ROLES_KEY,
-  TripActorEnum,
-  TripStatusEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+import { AuthenticatedUser, ROLES_KEY, UserRoleEnum } from '@masr3/libs/auth';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
-import TripOfferController from '../trip-offer.controller';
-import TripOfferService from '../trip-offer.service';
 import TripController from '../trip.controller';
 import TripService from '../trip.service';
 
@@ -94,46 +87,5 @@ describe('TripController', () => {
       actor: TripActorEnum.DRIVER,
       actorId: 5,
     });
-  });
-});
-
-describe('TripOfferController', () => {
-  let controller: TripOfferController;
-  let tripOfferService: jest.Mocked<TripOfferService>;
-
-  beforeEach(() => {
-    tripOfferService = {
-      create: jest.fn(),
-      listForTrip: jest.fn(),
-      accept: jest.fn(),
-      withdraw: jest.fn(),
-    } as unknown as jest.Mocked<TripOfferService>;
-
-    controller = new TripOfferController(tripOfferService);
-  });
-
-  it.each([
-    ['create', [UserRoleEnum.DRIVER]],
-    ['list', [UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN]],
-    ['accept', [UserRoleEnum.CUSTOMER]],
-    ['withdraw', [UserRoleEnum.DRIVER]],
-  ])('%s requires roles %p', (method, roles) => {
-    expect(rolesOf(TripOfferController.prototype, method)).toEqual(roles);
-  });
-
-  it('makes the offer as the calling driver', async () => {
-    const driver = user(UserRoleEnum.DRIVER, 5);
-
-    await controller.create(driver, 7, { amount: 90 });
-
-    expect(tripOfferService.create).toHaveBeenCalledWith(7, driver, 90);
-  });
-
-  it('accepts as the calling customer', async () => {
-    const customer = user(UserRoleEnum.CUSTOMER, 1);
-
-    await controller.accept(customer, 7, 12);
-
-    expect(tripOfferService.accept).toHaveBeenCalledWith(7, 12, customer);
   });
 });

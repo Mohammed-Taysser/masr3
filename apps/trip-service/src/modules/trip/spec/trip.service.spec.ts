@@ -12,30 +12,31 @@ import {
   Repository,
 } from 'typeorm';
 
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 import {
   AuditActionEnum,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
-  AuthenticatedUser,
-  dayjs,
   SYSTEM_AUDIT_ACTOR,
   TripActorEnum,
   TripKafkaTopic,
   TripStatusEnum,
   TripTypeEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
+import { OutboxService } from '@masr3/libs/outbox';
 
 import AuditRecorderService from '../../audit/audit-recorder.service';
-import OutboxService from '../../outbox/outbox.service';
-import TripOfferEntity from '../entities/trip-offer.entity';
+import { OutboxEventMap } from '../../../kafka/kafka.interface';
+import TripOfferEntity from '../../trip-offer/entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../entities/trip-status-history.entity';
 import TripEntity from '../entities/trip.entity';
 import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
-import { TripExpiryJobEnum, TripOfferStatusEnum } from '../trip.enum';
+import { TripExpiryJobEnum } from '../trip.enum';
+import { TripOfferStatusEnum } from '../../trip-offer/trip-offer.enum';
 import { CreateTripCommand } from '../trip.interface';
 import TripService from '../trip.service';
 
@@ -54,7 +55,7 @@ describe('TripService', () => {
   let dataSource: jest.Mocked<DataSource>;
   let historyRepository: jest.Mocked<Repository<TripStatusHistoryEntity>>;
   let tripRepository: jest.Mocked<Repository<TripEntity>>;
-  let outboxService: jest.Mocked<OutboxService>;
+  let outboxService: jest.Mocked<OutboxService<OutboxEventMap>>;
   let auditRecorder: jest.Mocked<AuditRecorderService>;
   let expiryQueue: jest.Mocked<Queue>;
 
@@ -109,7 +110,7 @@ describe('TripService', () => {
 
     outboxService = {
       enqueue: jest.fn(),
-    } as unknown as jest.Mocked<OutboxService>;
+    } as unknown as jest.Mocked<OutboxService<OutboxEventMap>>;
 
     auditRecorder = {
       record: jest.fn(),

@@ -25,11 +25,11 @@ import {
   CurrentUser,
   Roles,
   UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/auth';
 
 import CreateTripOfferDto from './dto/create-trip-offer.dto';
 import TripOfferResponseDto from './dto/trip-offer-response.dto';
-import TripResponseDto from './dto/trip-response.dto';
+import TripResponseDto from '../trip/dto/trip-response.dto';
 import TripOfferService from './trip-offer.service';
 
 @ApiTags('Trip offers')

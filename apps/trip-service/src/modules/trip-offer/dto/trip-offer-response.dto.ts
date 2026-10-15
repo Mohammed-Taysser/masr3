@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
-import { TripOfferStatusEnum } from '../trip.enum';
+import { TripOfferStatusEnum } from '../trip-offer.enum';
 
 class TripOfferResponseDto {
   @Expose()

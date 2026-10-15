@@ -9,14 +9,11 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { decimalTransformer } from '../../../shared/transformers/decimal.transformer';
-import {
-  FARE_PRECISION,
-  FARE_SCALE,
-  UQ_TRIP_OFFERS_PENDING_DRIVER,
-} from '../trip.constant';
-import { TripOfferStatusEnum } from '../trip.enum';
-import TripEntity from './trip.entity';
+import { MONEY_COLUMN_OPTIONS } from '@masr3/libs/money';
+
+import TripEntity from '../../trip/entities/trip.entity';
+import { UQ_TRIP_OFFERS_PENDING_DRIVER } from '../trip-offer.constant';
+import { TripOfferStatusEnum } from '../trip-offer.enum';
 
 @Entity('trip_offers')
 @Index(['tripId', 'status'])
@@ -40,12 +37,7 @@ class TripOfferEntity {
   @Column()
   driverId: number;
 
-  @Column({
-    type: 'decimal',
-    precision: FARE_PRECISION,
-    scale: FARE_SCALE,
-    transformer: decimalTransformer,
-  })
+  @Column({ ...MONEY_COLUMN_OPTIONS })
   amount: number;
 
   @Column({ type: 'enum', enum: TripOfferStatusEnum })

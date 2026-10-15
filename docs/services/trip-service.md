@@ -83,7 +83,8 @@ erDiagram
 - **One live offer per driver per trip:** `UQ_trip_offers_pending_driver`, unique
   `(tripId, driverId) WHERE status = 'PENDING'`.
 - **A parcel names its recipient:** `CHK_trips_parcel_recipient`.
-- **Money** is `decimal(10, 2)` in EGP (`TRIP_CURRENCY`). `decimalTransformer` reads pg's
+- **Money** is `decimal(10, 2)` in EGP (`TRIP_CURRENCY`), declared with `MONEY_COLUMN_OPTIONS`
+  and validated with `@IsMoney()`, both from `@masr3/libs`. `decimalTransformer` reads pg's
   strings back as numbers; round to 2 decimals after any arithmetic.
 - **History is the only record of when and who.** `trips` keeps no `acceptedAt` or
   `completedAt`: "completed at" is the `createdAt` of the COMPLETED history row.
@@ -143,7 +144,7 @@ sequenceDiagram
   participant API as TripController
   participant S as TripService
   participant DB as trip-db
-  participant Q as BullMQ TRIP-EXPIRY
+  participant Q as BullMQ trip-expiry
   C->>API: POST /trips
   API->>S: create(command)
   S->>DB: BEGIN
@@ -188,6 +189,9 @@ sequenceDiagram
   an acceptance in progress. `409` when the trip is not REQUESTED, has expired, or the driver
   already has an active trip. An `amount` equal to `proposedFare` means "I'll take it as is".
 - **Lock order is always trip, then offers**, in both flows, so they cannot deadlock.
+- Offers are their own module (`modules/trip-offer/`). Accepting one is a trip transition, so
+  `TripOfferService` calls `TripService`, and `TripService` closes the other offers in the same
+  transaction.
 - **Withdrawing** locks the driver's own offer `FOR UPDATE`, checks it is still PENDING, marks
   it WITHDRAWN and writes a `TRIP_OFFER` `WITHDRAWN` audit row, in one transaction.
 - **Accepting** finds the offer through the trip's `customerId`, so a stranger gets `404`
@@ -228,7 +232,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant Q as BullMQ TRIP-EXPIRY
+  participant Q as BullMQ trip-expiry
   participant P as TripExpiryProcessor
   participant E as TripExpiryService
   participant S as TripService.transition
@@ -250,8 +254,8 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant Q as BullMQ OUTBOX-RELAY
-  participant R as OutboxRelayService
+  participant Q as BullMQ trip-outbox-relay
+  participant R as OutboxRelayService (libs)
   participant DB as trip-db
   participant K as Kafka
   Q->>R: RELAY (job scheduler, every OUTBOX_POLL_INTERVAL_MS)
@@ -271,6 +275,8 @@ sequenceDiagram
   end
 ```
 
+The outbox is the shared one from `@masr3/libs` (`OutboxModule.forRoot` in `AppModule`), on
+queue `trip-outbox-relay` with lock id `7002001` (env `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID`).
 The pattern (why, guarantees, costs) is in
 [`docs/patterns/transactional-outbox.md`](../patterns/transactional-outbox.md). Pending or
 failing events: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER BY id`.
@@ -317,6 +323,7 @@ minutes.
   branch; its commit message says how to restore the env and database.
 - **Routing and ETA:** a routing engine (OSRM) for driving distance, ETA and fare suggestions.
   It builds on live location.
-- **Ratings** after a completed trip, **driver profiles and vehicles**, **payments**.
+- **Ratings** after a completed trip, **driver profiles**, **payments**. Vehicles exist in
+  [vehicle-service](vehicle-service.md); trips don't reference them yet.
 - **Display names:** trip-service knows users only by id; names and car details come from
   events or auth-service.

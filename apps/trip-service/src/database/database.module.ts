@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import TripOfferEntity from '../modules/trip/entities/trip-offer.entity';
+
+import { OutboxEventEntity } from '@masr3/libs/outbox';
+import TripOfferEntity from '../modules/trip-offer/entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../modules/trip/entities/trip-status-history.entity';
-import OutboxEventEntity from '../modules/outbox/entities/outbox-event.entity';
 import TripEntity from '../modules/trip/entities/trip.entity';
 
 @Module({

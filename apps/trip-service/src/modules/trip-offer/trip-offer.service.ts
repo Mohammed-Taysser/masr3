@@ -6,30 +6,31 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { isUniqueViolation } from '@masr3/libs/database';
+import { dayjs } from '@masr3/libs/date';
 import {
   AuditActionEnum,
   AuditEntityTypeEnum,
-  AuthenticatedUser,
   buildAuditChanges,
   buildUserAuditActor,
-  dayjs,
   TripActorEnum,
   TripStatusEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
-import { isUniqueViolation } from '../../shared/database/postgres-error';
 import AuditRecorderService from '../audit/audit-recorder.service';
 import TripOfferEntity from './entities/trip-offer.entity';
-import TripEntity from './entities/trip.entity';
+import TripEntity from '../trip/entities/trip.entity';
 import {
   DRIVER_ACTIVE_TRIP_STATUSES,
+  UQ_TRIPS_ACTIVE_DRIVER,
+} from '../trip/trip.constant';
+import TripService from '../trip/trip.service';
+import {
   TRIP_OFFER_AUDITED_FIELDS,
   UQ_TRIP_OFFERS_PENDING_DRIVER,
-  UQ_TRIPS_ACTIVE_DRIVER,
-} from './trip.constant';
-import { TripOfferStatusEnum } from './trip.enum';
-import TripService from './trip.service';
+} from './trip-offer.constant';
+import { TripOfferStatusEnum } from './trip-offer.enum';
 
 @Injectable()
 class TripOfferService {

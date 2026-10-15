@@ -6,27 +6,24 @@ import {
   Repository,
 } from 'typeorm';
 
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 import {
   AuditActionEnum,
   AuditActorTypeEnum,
   AuditEntityTypeEnum,
-  AuthenticatedUser,
-  dayjs,
   TripActorEnum,
   TripStatusEnum,
-  UserRoleEnum,
-} from '@masr3/libs';
+} from '@masr3/libs/kafka';
 
 import TripOfferEntity from '../entities/trip-offer.entity';
 import AuditRecorderService from '../../audit/audit-recorder.service';
-import TripEntity from '../entities/trip.entity';
+import TripEntity from '../../trip/entities/trip.entity';
 import TripOfferService from '../trip-offer.service';
-import {
-  UQ_TRIP_OFFERS_PENDING_DRIVER,
-  UQ_TRIPS_ACTIVE_DRIVER,
-} from '../trip.constant';
-import { TripOfferStatusEnum } from '../trip.enum';
-import TripService from '../trip.service';
+import { UQ_TRIPS_ACTIVE_DRIVER } from '../../trip/trip.constant';
+import TripService from '../../trip/trip.service';
+import { UQ_TRIP_OFFERS_PENDING_DRIVER } from '../trip-offer.constant';
+import { TripOfferStatusEnum } from '../trip-offer.enum';
 
 const uniqueViolation = (constraint: string) =>
   new QueryFailedError(
