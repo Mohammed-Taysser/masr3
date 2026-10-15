@@ -1,6 +1,7 @@
 // Every business entity a person can act on. Left out on purpose: audits (the
-// trail itself), trip_status_history (written by a trip's STATUS_CHANGED) and
-// outbox_events (transport, not data).
+// trail itself), trip_status_history (written with a trip's STATUS_CHANGED),
+// drivers (vehicle-service's copy of auth's users) and outbox_events
+// (transport, not data).
 enum AuditEntityTypeEnum {
   // auth-service
   USER = 'USER',
@@ -11,6 +12,8 @@ enum AuditEntityTypeEnum {
   NOTIFICATION = 'NOTIFICATION',
   NOTIFICATION_DELIVERY = 'NOTIFICATION_DELIVERY',
   NOTIFICATION_PREFERENCE = 'NOTIFICATION_PREFERENCE',
+  // vehicle-service
+  VEHICLE = 'VEHICLE',
 }
 
 enum AuditActorTypeEnum {

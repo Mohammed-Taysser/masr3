@@ -9,7 +9,7 @@ Copy from the service closest to what you are building:
 | You are building                            | Copy from                                                       |
 | ------------------------------------------- | --------------------------------------------------------------- |
 | Any service (layout, env, auth, migrations) | `apps/trip-service`: the leanest service with every pattern     |
-| A **producer** of events that must not drop | `apps/trip-service/src/modules/outbox/` (transactional outbox)  |
+| A **producer** of events that must not drop | `OutboxModule` from `@masr3/libs` (transactional outbox)        |
 | A **consumer** of Kafka events              | `apps/audit-service/src/kafka/` (one topic, generic handler)    |
 | A consumer of many topics, with handlers    | `apps/notification-service/src/kafka/`                          |
 | Background jobs                             | `apps/trip-service/src/queue/` and `modules/trip/trip-expiry.*` |
@@ -41,13 +41,13 @@ groups are new to you.
 
 ## 1. Pick the next free numbers
 
-| What             | Rule                 | Taken                                                                       | Next       |
-| ---------------- | -------------------- | --------------------------------------------------------------------------- | ---------- |
-| App port         | 7000 + n             | auth 7000, notification 7001, trip 7002, audit 7003                         | **7004**   |
-| Database port    | 41000 + n            | auth-db 41000 … audit-db 41003                                              | **41004**  |
-| Inspector port   | 9229 + n             | 9229 … 9232                                                                 | **9233**   |
-| BullMQ queue     | globally unique name | `OUTBOX-RELAY` (trip), `AUTH-OUTBOX-RELAY`, `TRIP-EXPIRY`, `NOTIFICATION-*` | `RATING-…` |
-| Advisory lock id | `<port>` + 3 digits  | 7000001 (auth relay), 7002001 (trip relay)                                  | `7004001`  |
+| What             | Rule                 | Taken                                                                                                    | Next       |
+| ---------------- | -------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
+| App port         | 7000 + n             | auth 7000, notification 7001, trip 7002, audit 7003, vehicle 7004                                        | **7005**   |
+| Database port    | 41000 + n            | auth-db 41000 … vehicle-db 41004                                                                         | **41005**  |
+| Inspector port   | 9229 + n             | 9229 … 9233                                                                                              | **9234**   |
+| BullMQ queue     | globally unique name | `trip-outbox-relay` (trip), `auth-outbox-relay`, `vehicle-outbox-relay`, `trip-expiry`, `notification-*` | `rating-…` |
+| Advisory lock id | `<port>` + 3 digits  | 7000001 (auth relay), 7002001 (trip relay), 7004001 (vehicle relay)                                      | `7005001`  |
 
 ## 2. Infrastructure
 
@@ -92,10 +92,10 @@ apps/rating-service/
     config/             config.module.ts + env/env.validation.ts + env/spec/
     database/           database.module.ts, data-source.ts, migrations/
     health/             public GET /api/health
-    kafka/              producer and/or consumer service + module + spec/
+    kafka/              producer and/or consumer service + module + spec/;
+                        kafka.interface.ts: OutboxEventMap (the outbox itself is in libs)
     queue/              BullMQ root module (only with jobs or an outbox)
-    shared/             service-scoped helpers (pagination, postgres-error, transformers)
-    modules/outbox/     transactional outbox + relay (publishes events that matter)
+    shared/             service-scoped helpers (transformers)
     modules/audit/      AuditRecorderService (produces audit events; needs the outbox)
     modules/<name>/     entities/, dto/, <name>.enum|constant|interface.ts,
                         module, service, controller, spec/ (dto specs in spec/dto/)
@@ -108,8 +108,12 @@ apps/rating-service/
   (`whitelist`, `transform`), the `ClassSerializerInterceptor` with
   `excludeExtraneousValues: true`, Swagger at `/api/docs`, the port from env.
 - **`config.module.ts`**: `envFilePath: ['apps/rating-service/.env', 'apps/rating-service/db.env']`.
-- **`shared/`**: copy what you need from trip-service (`pagination/`,
-  `database/postgres-error.ts`). Shared code goes to `libs` only when it is truly cross-service.
+- **Shared code** already in `@masr3/libs`: pagination (`PaginationQueryDto`, `paginate`,
+  `paginationWindow`, `PaginatedResponseDto(Item)`), `isUniqueViolation`, money
+  (`MONEY_COLUMN_OPTIONS`, `@IsMoney()`, `decimalTransformer`)
+  and the outbox. A list query DTO `extends PaginationQueryDto`; a paginated response is
+  `class PaginatedRatingsResponseDto extends PaginatedResponseDto(RatingResponseDto) {}`.
+  Anything else stays in the service's `shared/` until a second service needs it.
 
 ## 5. `project.json`
 
@@ -138,17 +142,17 @@ Every variable is **required** and validated at boot by `config/env/env.validati
 variable only when code reads it, and change **all four** places in one change:
 `env.validation.ts`, `.env.example`, `.env`, and the env spec (`validEnv` and its lists).
 
-| Family          | Variables                                                                 | Needed when                        |
-| --------------- | ------------------------------------------------------------------------- | ---------------------------------- |
-| Base            | `NODE_ENV`, `PORT=7004`, `SERVICE_NAME=rating-service`                    | always                             |
-| Database        | `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` + `db.env`               | always                             |
-| `db.env`        | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB=rating_db` (committed) | always                             |
-| Auth            | `AUTH_SERVICE_URL=http://localhost:7000/api` (JWKS)                       | always (the guard verifies tokens) |
-| Kafka (any)     | `KAFKA_BROKER=localhost:42000`, `KAFKA_CLIENT_ID=rating-service`          | produces or consumes               |
-| Kafka consumer  | `KAFKA_CONSUMER_GROUP_ID=rating-service`                                  | consumes                           |
-| Redis / BullMQ  | `REDIS_HOST=localhost`, `REDIS_PORT=44000`                                | jobs or an outbox                  |
-| Outbox          | `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`     | has an outbox                      |
-| Calls a service | `SERVICE_CLIENT_ID` / `SERVICE_CLIENT_SECRET` (see authentication guide)  | calls another service's API        |
+| Family          | Variables                                                                                                           | Needed when                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Base            | `NODE_ENV`, `PORT=7004`, `SERVICE_NAME=rating-service`                                                              | always                             |
+| Database        | `DATABASE_HOST=localhost`, `DATABASE_PORT=41500` + `db.env`                                                         | always                             |
+| `db.env`        | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB=rating_db` (committed)                                           | always                             |
+| Auth            | `AUTH_SERVICE_URL=http://localhost:7000/api` (JWKS)                                                                 | always (the guard verifies tokens) |
+| Kafka (any)     | `KAFKA_BROKER=localhost:42000`, `KAFKA_CLIENT_ID=rating-service`                                                    | produces or consumes               |
+| Kafka consumer  | `KAFKA_CONSUMER_GROUP_ID=rating-service`                                                                            | consumes                           |
+| Redis / BullMQ  | `REDIS_HOST=localhost`, `REDIS_PORT=44000`                                                                          | jobs or an outbox                  |
+| Outbox          | `OUTBOX_POLL_INTERVAL_MS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_RETENTION_MS`, `OUTBOX_RELAY_QUEUE`, `OUTBOX_RELAY_LOCK_ID` | has an outbox                      |
+| Calls a service | `SERVICE_CLIENT_ID` / `SERVICE_CLIENT_SECRET` (see authentication guide)                                            | calls another service's API        |
 
 - Copy `.env.example` from a service with the same families and **change the values**: a copied
   `PORT=7000` or `SERVICE_NAME=trip-service` boots on the wrong port or under the wrong name.
@@ -252,17 +256,19 @@ flowchart LR
    - `<domain>.events.ts`: payload interfaces extending `BaseKafkaEvent`, and a
      `RatingEventMap { [RatingKafkaTopic.SUBMITTED]: RatingSubmittedEvent }`, exported with
      `export type`.
-   - Export both from `libs/src/index.ts`.
+   - Export both from `libs/src/lib/kafka/index.ts` (imported as `@masr3/libs/kafka`).
 2. **Never set `eventId` / `occurredAt`.** Pass an `EventPayload<T>`; `createKafkaEvent` fills
    both, inside `publish` or the outbox's `enqueue`.
 3. **Create the topic:** `scripts/kafka-create-topics.sh` (copy audit-service's) with a `TOPICS`
    list that matches the enum, plus the `kafka:create-topics` target from step 5. Run it.
 4. **Choose how to publish:**
    - **Outbox** (default): the event must not be lost or invented, because other services act
-     on it. Copy trip-service's `modules/outbox/`, `kafka/kafka-producer.service.ts` and
-     `queue/queue.module.ts`, type `OutboxService.enqueue` over your event map, and call
-     `enqueue(manager, topic, payload, key)` with the **transaction's** `manager`. Give the queue,
-     scheduler and advisory lock their own names (step 1). Full guide:
+     on it. Register `OutboxModule.forRoot({ imports: [KafkaModule], producer: KafkaProducerService })`
+     in `AppModule` (copy `kafka/kafka-producer.service.ts` and `queue/queue.module.ts`), declare
+     `OutboxEventMap` in `kafka/kafka.interface.ts`, inject
+     `OutboxService<OutboxEventMap>`, and call `enqueue(manager, topic, payload, key)` with the
+     **transaction's** `manager`. Set the service's own `OUTBOX_RELAY_QUEUE` and
+     `OUTBOX_RELAY_LOCK_ID` in env (step 1). Full guide:
      [transactional outbox](patterns/transactional-outbox.md).
    - **Direct, best-effort:** only when losing the event is harmless (auth-service's sign-in
      alert). `publish()` logs and swallows broker errors.
@@ -339,8 +345,8 @@ Copy `apps/audit-service/src/kafka/` (one topic) or `apps/notification-service/s
   `REDIS_HOST`, `REDIS_PORT`.
 - Register each queue in its feature module with `BullModule.registerQueue({ name })`.
 - **Queue names and scheduler ids are global.** Every service uses the same Redis with BullMQ's
-  default prefix. Two services with a queue named `OUTBOX-RELAY` share one queue, and whichever
-  worker is free takes the other service's jobs. Prefix with the service (`RATING-…`).
+  default prefix. Two services with the same queue name share one queue, and whichever
+  worker is free takes the other service's jobs. Prefix with the service, in lowercase kebab-case (`rating-…`).
 - Repeating work: `queue.upsertJobScheduler(SCHEDULER_ID, { every: ms }, { name: JobEnum.X })`
   on boot. Work at a future moment: a delayed job with a stable `jobId`, queued after the
   transaction commits, backed by a sweep. Never `setTimeout` / `setInterval`.
@@ -359,8 +365,8 @@ in [audit-service](services/audit-service.md); a producer needs:
 3. **Type the outbox** over `AuditEventMap` too (`type OutboxEventMap = RatingEventMap & AuditEventMap`).
 4. **An allow-list** in `<module>.constant.ts`: `RATING_AUDITED_FIELDS`, the columns a diff may
    contain. **Never list a password, hash, token or other secret.**
-5. **`modules/audit/`**, copied unchanged from trip-service or auth-service: `audit.module.ts`
-   (imports `OutboxModule`), `audit-recorder.service.ts`, `audit.interface.ts` (`AuditRecord`)
+5. **`modules/audit/`**, copied unchanged from trip-service or auth-service: `audit.module.ts`,
+   `audit-recorder.service.ts`, `audit.interface.ts` (`AuditRecord`)
    and its spec. `AuditRecorderService.record(manager, record)` adds
    `schemaVersion: AUDIT_EVENT_SCHEMA_VERSION`, `service` from `SERVICE_NAME` and the
    `buildAuditEventKey(entity)` key, then enqueues into the outbox. One per service, shared by
@@ -421,21 +427,22 @@ returns `{ status: 'ok', service: 'rating-service' }`. Point `global-setup.ts`,
 
 ## Troubleshooting
 
-| Symptom                                                            | Cause and fix                                                                                                                                   |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Build fails: `Can't resolve './kafka-producer.service'`            | `kafka.module.ts` was copied from a producer. A consumer-only service provides `KafkaConsumerService` and imports the modules its handlers use. |
-| `Cannot find module '@masr3/libs'` when migrating                  | The `migrate*` targets lack `TS_NODE_BASEURL="$PWD" NODE_OPTIONS="-r tsconfig-paths/register"`.                                                 |
-| `address already in use :::9229` on serve                          | The serve target has no `port`. Give it the next inspector port.                                                                                |
-| Service boots on another service's port                            | `.env.example` / `.env` copied without changing `PORT` / `SERVICE_NAME`.                                                                        |
-| "running in another Nx process"                                    | A previous `nx serve` still runs. Kill its whole tree, `nx.js` included (`ps -eo pid,args \| grep "[n]x serve"`).                               |
-| Env spec test "rejects REDIS_PORT=0" fails                         | The spec was copied from a service with Redis. List only this service's variables.                                                              |
-| `This server does not host this topic-partition` / subscribe fails | The topic doesn't exist. Run its owner's `kafka:create-topics`.                                                                                 |
-| Consumer receives nothing                                          | Wrong broker, the topic is empty, `fromBeginning: false` on a new group, or another service uses the same group id and takes the partitions.    |
-| Consumer replays the whole topic                                   | `KAFKA_CONSUMER_GROUP_ID` changed: a new group has no offsets. Harmless if the handler is idempotent.                                           |
-| The same message is retried forever                                | The handler throws for a message that can never succeed. Validate it with a DTO in `parse` and skip it instead.                                 |
-| Duplicate rows from one event                                      | No unique `eventId` column, or the `23505` isn't caught by constraint name.                                                                     |
-| Jobs of one service run in another                                 | Two services use the same BullMQ queue name. Prefix it with the service.                                                                        |
-| A route returns `{}`                                               | No `@SerializeOptions({ type })`, or a response DTO field without `@Expose()`.                                                                  |
-| `CREATE TYPE … already exists` in a generated migration            | Two columns share an `enumName`. Keep TypeORM's default enum names.                                                                             |
-| pgbouncer can't reach the new database after `docker compose up`   | `rating-db` is missing from `pgbouncer.depends_on`, or pgbouncer wasn't restarted after editing `pgbouncer.ini`.                                |
-| `cp` or `rm` hangs in a script                                     | They are aliased to interactive mode in this shell. Use `cp -f` / `rm -f` (`command cp -f` if `-f` still prompts).                              |
+| Symptom                                                            | Cause and fix                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build fails: `Can't resolve './kafka-producer.service'`            | `kafka.module.ts` was copied from a producer. A consumer-only service provides `KafkaConsumerService` and imports the modules its handlers use.                                                                                                   |
+| `Cannot find module '@masr3/libs'` when migrating                  | The `migrate*` targets lack `TS_NODE_BASEURL="$PWD" NODE_OPTIONS="-r tsconfig-paths/register"`.                                                                                                                                                   |
+| `address already in use :::9229` on serve                          | The serve target has no `port`. Give it the next inspector port.                                                                                                                                                                                  |
+| Service boots on another service's port                            | `.env.example` / `.env` copied without changing `PORT` / `SERVICE_NAME`.                                                                                                                                                                          |
+| "running in another Nx process"                                    | A previous `nx serve` still runs. Kill its whole tree, `nx.js` included (`ps -eo pid,args \| grep "[n]x serve"`).                                                                                                                                 |
+| Env spec test "rejects REDIS_PORT=0" fails                         | The spec was copied from a service with Redis. List only this service's variables.                                                                                                                                                                |
+| `This server does not host this topic-partition` / subscribe fails | The topic doesn't exist. Run its owner's `kafka:create-topics`.                                                                                                                                                                                   |
+| Consumer receives nothing                                          | Wrong broker, the topic is empty, `fromBeginning: false` on a new group, or another service uses the same group id and takes the partitions.                                                                                                      |
+| Consumer replays the whole topic                                   | `KAFKA_CONSUMER_GROUP_ID` changed: a new group has no offsets. Harmless if the handler is idempotent.                                                                                                                                             |
+| The same message is retried forever                                | The handler throws for a message that can never succeed. Validate it with a DTO in `parse` and skip it instead.                                                                                                                                   |
+| Duplicate rows from one event                                      | No unique `eventId` column, or the `23505` isn't caught by constraint name.                                                                                                                                                                       |
+| Jobs of one service run in another                                 | Two services use the same BullMQ queue name. Prefix it with the service.                                                                                                                                                                          |
+| A route returns `{}`                                               | No `@SerializeOptions({ type })`, or a response DTO field without `@Expose()`.                                                                                                                                                                    |
+| `CREATE TYPE … already exists` in a generated migration            | Two columns share an `enumName`. Keep TypeORM's default enum names.                                                                                                                                                                               |
+| pgbouncer can't reach the new database after `docker compose up`   | `rating-db` is missing from `pgbouncer.depends_on`, or pgbouncer wasn't restarted after editing `pgbouncer.ini`.                                                                                                                                  |
+| `password authentication failed` on boot                           | The user is missing from `userlist.txt` (or its password differs from `db.env`), or pgbouncer wasn't restarted after editing it. If `db.env` changed after the database first started, reset its volume ([infrastructure.md](infrastructure.md)). |
+| `cp` or `rm` hangs in a script                                     | They are aliased to interactive mode in this shell. Use `cp -f` / `rm -f` (`command cp -f` if `-f` still prompts).                                                                                                                                |

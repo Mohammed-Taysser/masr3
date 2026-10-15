@@ -4,16 +4,17 @@ masr3 (Arabic **مُسْرِع**, "fast"; use that spelling in Arabic localizati
 Nx monorepo of NestJS microservices plus a shared `libs` project. Package manager: **pnpm**.
 Docker runs only the infrastructure. The apps run on the host through Nx.
 
-| Service                | Port | Database (host port)      | Role                                                           |
-| ---------------------- | ---- | ------------------------- | -------------------------------------------------------------- |
-| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*` |
-| `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences      |
-| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding                         |
-| `audit-service`        | 7003 | `audit-db` (41003)        | Audit trail of every service; consumes `audit.action-recorded` |
+| Service                | Port | Database (host port)      | Role                                                                |
+| ---------------------- | ---- | ------------------------- | ------------------------------------------------------------------- |
+| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*`      |
+| `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences           |
+| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding                              |
+| `audit-service`        | 7003 | `audit-db` (41003)        | Audit trail of every service; consumes `audit.action-recorded`      |
+| `vehicle-service`      | 7004 | `vehicle-db` (41004)      | Drivers' vehicles; keeps a copy of drivers from `auth.user-changed` |
 
 All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`;
-auth-service, trip-service and notification-service also use Redis (`localhost:44000`) for BullMQ
-jobs.
+auth-service, trip-service, vehicle-service and notification-service also use Redis
+(`localhost:44000`) for BullMQ jobs.
 Each service is described, with diagrams, in `docs/services/<svc>.md`; the stack, ports and Kafka
 in `docs/infrastructure.md`. `README.md` is the entry point: the system overview, links to every
 doc, setup and commands.
@@ -53,7 +54,7 @@ doc, setup and commands.
   write a replacement.
 - A migration that has not been committed may be reverted, deleted and regenerated. A committed
   one never is: add a new migration instead.
-- If a service's entities import `@masr3/libs`, its `migrate*` targets need
+- If a service's entities import `@masr3/libs/*`, its `migrate*` targets need
   `TS_NODE_BASEURL="$PWD" NODE_OPTIONS="-r tsconfig-paths/register"`, as trip-service has.
   Without it the CLI fails with "Cannot find module '@masr3/libs'".
 
@@ -68,7 +69,9 @@ doc, setup and commands.
   destructuring of `Map` / `Object.entries` pairs (`([topic, messages]) =>`) is allowed.
 - **List filters live in their own private method.** A list method passes
   `prepareListWhere(query)` (static when it needs no `this`) to `findAndCount`, together with
-  order and pagination; it never builds the `where` inline. The method returns
+  order and `...paginationWindow(query)`, then returns `paginate(items, total, query)`; it never
+  builds the `where` inline. Every list orders by a stable key ending in `id`
+  (`{ createdAt: 'DESC', id: 'DESC' }` by default). The method returns
   `FindOptionsWhere<Entity>` built from the query's optional fields
   (`...(query.status && { status: query.status })`). Examples: `UsersService`,
   `AuditService`, `DeliveryLogService`, `InboxService`, `TripService.prepareMineWhere`.
@@ -91,7 +94,7 @@ doc, setup and commands.
     `<module>.interface.ts`. Each is one flat file per module, next to the module.
   - Enum names end in `Enum` (`TripStatusEnum`), and their values are UPPERCASE strings.
   - Use a plain `enum`, never `const enum`, because files are transpiled in isolation.
-- **Dates:** always `dayjs`, imported from `@masr3/libs`, and always UTC (`APP_TIMEZONE`).
+- **Dates:** always `dayjs`, imported from `@masr3/libs/date`, and always UTC (`APP_TIMEZONE`).
   - Never use `new Date()`, `Date.now()`, `Date.parse`, `Intl`, or another date library.
   - Call `.toDate()` only at a library boundary (a TypeORM column, a JWT option).
   - `main.ts` starts with `import '@masr3/libs/timezone';`, before any other import. It sets
@@ -100,8 +103,14 @@ doc, setup and commands.
 - **Money** is `decimal` in the currency's major unit (EGP, 2 decimals), never a float column.
 - **Shared code:**
   - Scope it to the service (`src/shared/…`) by default.
-  - Put it in `libs` only when it is truly cross-service (Kafka contracts, dayjs).
-  - Import libs as `@masr3/libs`.
+  - Put it in `libs` only when it is truly cross-service (Kafka contracts, dayjs, pagination,
+    `isUniqueViolation`, `decimalTransformer`, money columns and `@IsMoney()`, the outbox).
+  - Pagination: list query DTOs `extends PaginationQueryDto`; paginated responses are
+    `class PaginatedXResponseDto extends PaginatedResponseDto(XResponseDto) {}`.
+  - Import libs by domain: `@masr3/libs/auth`, `/database`, `/date`, `/kafka`, `/money`,
+    `/outbox`, `/pagination` (each folder's `index.ts`, listed in `tsconfig.base.json`). There is
+    no root barrel; ESLint rejects a bare `@masr3/libs` import, and deep paths into a folder don't
+    resolve. A new libs folder gets an `index.ts` and a path entry.
 - **No shell wrappers.** Use an Nx `run-commands` target that calls the tool directly, for
   example `ts-node -r tsconfig-paths/register <script>`, not a `.sh` that does the same. The
   exception is each service's `scripts/kafka-create-topics.sh`, which every topic owner keeps.
@@ -126,9 +135,10 @@ apps/<svc>/
     database/data-source.ts           CLI DataSource (dotenv .env + db.env), same entity list
     database/migrations/              <timestamp>-<kebab-name>.ts, CLI-generated only
     health/                           public GET /api/health → { status, service: SERVICE_NAME, timestamp }
-    kafka/                            producer and/or consumer service + module (when the service uses Kafka)
+    kafka/                            producer and/or consumer service + module (when the service uses Kafka);
+                                      kafka.interface.ts: OutboxEventMap, the topics it publishes through
+                                      its outbox (OutboxModule.forRoot from libs in AppModule)
     queue/                            BullMQ root module: the Redis connection (when the service has jobs)
-    modules/outbox/                   transactional outbox + relay (when it publishes events that matter)
     modules/audit/                    AuditRecorderService (when it produces audit events; needs the outbox)
     modules/<name>/
       entities/<name>.entity.ts
@@ -168,10 +178,11 @@ apps/<svc>/
 - **Nullable columns** spell out the type: `@Column({ type: 'varchar', nullable: true }) x: string | null`.
 - **Numbers:**
   - Counts and ids use `int`.
-  - Money uses `decimal`, with precision and scale from constants (e.g. `FARE_PRECISION` /
-    `FARE_SCALE`) and `transformer: decimalTransformer` (`src/shared/transformers/`). The `pg`
-    driver returns decimals as strings; the transformer reads them back as numbers. Round to the
-    scale after any arithmetic, because JS numbers are floats.
+  - Money columns are `@Column({ ...MONEY_COLUMN_OPTIONS })` from `@masr3/libs/money`: `decimal`
+    (`MONEY_PRECISION`, `MONEY_SCALE`) with `decimalTransformer`. The `pg` driver returns
+    decimals as strings; the transformer reads them back as numbers. Validate a money field with
+    `@IsMoney()` (positive, at most `MONEY_SCALE` decimals and `MONEY_MAX`). Round to the scale
+    after any arithmetic, because JS numbers are floats.
   - Coordinates use `double precision`, which takes no precision or scale. Round only for
     display.
   - Validate ranges in the DTO (`@IsLatitude()`, `@IsLongitude()`, `@Min()`), not with a column
@@ -181,14 +192,17 @@ apps/<svc>/
   check for an invariant that must hold no matter which code path writes the row. Example:
   `CHK_trips_parcel_recipient` — a PARCEL trip must have a recipient.
 - **Event idempotency:** store the event's `eventId` as a unique column, insert first, and treat
-  Postgres error `23505` as "already handled".
+  Postgres error `23505` as "already handled". A full-state snapshot (`auth.user-changed`) is
+  applied as an upsert or delete instead, which is idempotent on its own.
 - **State changes** (e.g. trip status) happen in one transaction, in this order:
   1. Lock the row: `findOne` with `lock: { mode: 'pessimistic_write' }`.
   2. Validate it in a pure policy function, with its own spec.
   3. Update the row.
-  4. Insert the history row.
+  4. Insert the history row, when the entity keeps one (trips do; a vehicle's status history is
+     its audit trail).
 
-  Never write status from anywhere else (see `TripService.transition`).
+  Never write status from anywhere else (see `TripService.transition`,
+  `VehicleService.changeStatus`).
 
 - **pgbouncer** runs in `transaction` mode. Avoid session state: session advisory locks
   (`pg_advisory_lock`), `LISTEN` / `NOTIFY`, and prepared statements that span transactions.
@@ -205,7 +219,7 @@ apps/<svc>/
 - **Swagger:** document every route with `@ApiTags`, `@ApiOperation({ summary, description })`
   and its responses.
 - **Auth:** every service registers `AuthenticationModule.register()` and
-  `{ provide: APP_GUARD, useExisting: AuthenticationGuard }` from `@masr3/libs` (after its
+  `{ provide: APP_GUARD, useExisting: AuthenticationGuard }` from `@masr3/libs/auth` (after its
   throttler). The guard is closed by default. Guide: `docs/authentication.md`.
   - `@Roles(...)` for user routes, `@CurrentUser()` for the principal. Roles are enforced inside
     the guard; there is no separate `RolesGuard`.
@@ -234,10 +248,12 @@ apps/<svc>/
   - An unexpected error is thrown, so the job is marked failed in bull-board.
   - The job must be safe to run twice, or concurrently on two instances: go through the same
     locked service method as everything else.
-- **Names:** queue names and scheduler ids are constants in `<module>.constant.ts`, job names an
+- **Names:** queue names and scheduler ids are constants in `<module>.constant.ts` (except the
+  outbox relay's, which is each service's `OUTBOX_RELAY_QUEUE` env variable), job names an
   enum in `<module>.enum.ts`, payloads an interface in `<module>.interface.ts`. Queue names are
-  global across services (one Redis, default prefix): never reuse another service's name
-  (auth-service's relay is `AUTH-OUTBOX-RELAY`, not `OUTBOX-RELAY`). Register a queue
+  global across services (one Redis, default prefix): never reuse another service's name.
+  Queue names and scheduler ids are lowercase kebab-case, prefixed with the service
+  (`trip-outbox-relay`, `trip-expiry`, `notification-email`; `QUEUE_NAME_PATTERN`). Register a queue
   with `BullModule.registerQueue` in its feature module.
 - **UI:** bull-board at `http://localhost:44001`. It discovers queues only at startup, so after a
   new or renamed queue first appears, run `docker compose up -d --no-deps --force-recreate bull-board`.
@@ -289,7 +305,7 @@ audit-service is the only store of the audit trail; other services produce to
     `<domain>.<kebab-event>`.
   - `<domain>.events.ts`: payload interfaces plus `<Domain>EventMap`, exported with
     `export type`.
-  - Export both from `libs/src/index.ts`.
+  - Export both from `libs/src/lib/kafka/index.ts` (imported as `@masr3/libs/kafka`).
 - **Every event** carries `eventId` and `occurredAt`. Producers never set them: they pass an
   `EventPayload<T>`, and `createKafkaEvent` (libs) fills both inside `publish` / the outbox's
   `enqueue`. It is keyed by the aggregate id (`userId`, `tripId`) to keep ordering.

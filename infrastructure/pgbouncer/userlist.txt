@@ -2,3 +2,4 @@
 "notification" "notification_user_password"
 "trip" "trip_user_password"
 "audit" "audit_user_password"
+"vehicle" "vehicle_user_password"

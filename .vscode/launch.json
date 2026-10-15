@@ -40,6 +40,16 @@
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/dist/apps/audit-service/**/*.js"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Attach vehicle-service (9233)",
+      "port": 9233,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/apps/vehicle-service/**/*.js"]
     }
   ],
   "compounds": [
@@ -48,7 +58,9 @@
       "configurations": [
         "Attach auth-service (9229)",
         "Attach notification-service (9230)",
-        "Attach trip-service (9231)"
+        "Attach trip-service (9231)",
+        "Attach audit-service (9232)",
+        "Attach vehicle-service (9233)"
       ]
     }
   ]

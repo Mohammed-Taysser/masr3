@@ -35,6 +35,15 @@
       "MaintenanceDB": "audit_db",
       "Username": "audit",
       "SSLMode": "prefer"
+    },
+    "5": {
+      "Name": "vehicle-db",
+      "Group": "masr3",
+      "Host": "masr3-vehicle-db",
+      "Port": 5432,
+      "MaintenanceDB": "vehicle_db",
+      "Username": "vehicle",
+      "SSLMode": "prefer"
     }
   }
 }

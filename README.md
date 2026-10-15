@@ -6,8 +6,8 @@ wherever the app is localized into Arabic.
 masr3 is an inDrive-style platform that moves people (rides) and things (parcels): a customer
 proposes a fare, drivers accept it or counter-offer, and the customer picks one offer.
 
-It is an Nx monorepo of **four NestJS services** (`auth-service`, `notification-service`,
-`trip-service` and `audit-service`) plus a shared `libs` project. **Docker runs only the infrastructure**: one
+It is an Nx monorepo of **five NestJS services** (`auth-service`, `notification-service`,
+`trip-service`, `audit-service` and `vehicle-service`) plus a shared `libs` project. **Docker runs only the infrastructure**: one
 Postgres per service behind pgbouncer, Kafka with kafka-ui, Redis with bull-board, pgAdmin and
 Mailhog. The services run on the host through Nx. Package manager: **pnpm**.
 
@@ -28,28 +28,33 @@ flowchart LR
     trip[trip-service :7002<br/>trips, offers]
     notification[notification-service :7001<br/>emails]
     audit[audit-service :7003<br/>audit trail]
+    vehicle[vehicle-service :7004<br/>vehicles]
   end
 
   customer & driver & admin -->|HTTP| auth
   customer & driver & admin -->|HTTP + access token| trip
   admin -->|HTTP + access token| audit
+  driver & admin -->|HTTP + access token| vehicle
 
   trip -.->|verify tokens with JWKS| auth
   notification -->|service token: user contact| auth
 
   auth -->|auth.* events| kafka{{Kafka}}
+  kafka -->|auth.user-changed: driver names| vehicle
   trip -->|trip.status-changed, outbox| kafka
   kafka -->|auth.* and trip events| notification
-  auth & trip -->|audit.action-recorded, outbox| kafka
+  auth & trip & vehicle -->|audit.action-recorded, outbox| kafka
   kafka -->|audit events| audit
 
   auth --- authdb[(auth-db)]
   trip --- tripdb[(trip-db)]
   notification --- notificationdb[(notification-db)]
   audit --- auditdb[(audit-db)]
+  vehicle --- vehicledb[(vehicle-db)]
   trip --- redis[(Redis, BullMQ)]
   auth --- redis
   notification --- redis
+  vehicle --- redis
   notification -->|SMTP| mail[Mailhog]
 ```
 
@@ -59,9 +64,10 @@ flowchart LR
   in-app and (later) SMS, WhatsApp and push, and serves the in-app inbox.
 - **Synchronous calls are rare:** tokens are verified locally, and the only service-to-service
   HTTP call is notification-service reading a user's contact.
-- **State changes travel as Kafka events.** trip-service publishes through a transactional
-  outbox, so an event is never lost or invented.
-- **Every change is audited.** auth-service and trip-service write an audit event, with a
+- **State changes travel as Kafka events.** trip-service, auth-service (`auth.user-changed`) and
+  vehicle-service publish through the shared transactional outbox in `libs`, so an event is never
+  lost or invented. vehicle-service keeps its own copy of drivers from `auth.user-changed`.
+- **Every change is audited.** auth-service, trip-service and vehicle-service write an audit event, with a
   before/after diff, into their outbox in the same transaction as the change; audit-service
   stores it once and serves it to admins.
 
@@ -73,6 +79,7 @@ flowchart LR
 | [trip-service](docs/services/trip-service.md)                 | 7002 | trips, status history, offers, trip events  |
 | [notification-service](docs/services/notification-service.md) | 7001 | templates, delivery, the notifications log  |
 | [audit-service](docs/services/audit-service.md)               | 7003 | the audit trail of every service            |
+| [vehicle-service](docs/services/vehicle-service.md)           | 7004 | vehicles, their verification and status     |
 
 Each service doc has its data model, its flows as diagrams, its events and a **Planned** section.
 
@@ -101,6 +108,7 @@ cp apps/auth-service/.env.example apps/auth-service/.env          # if missing
 cp apps/notification-service/.env.example apps/notification-service/.env
 cp apps/trip-service/.env.example apps/trip-service/.env
 cp apps/audit-service/.env.example apps/audit-service/.env
+cp apps/vehicle-service/.env.example apps/vehicle-service/.env
 
 npx nx run auth-service:generate-signing-key --name=jwt           # RS256 signing key (once)
 openssl rand -hex 32                                              # client secret: set it as
@@ -110,6 +118,7 @@ npx nx run-many -t migrate                                        # schema for e
 npx nx run auth-service:kafka:create-topics                       # Kafka topics (idempotent)
 npx nx run trip-service:kafka:create-topics
 npx nx run audit-service:kafka:create-topics
+npx nx run auth-service:users:publish-snapshots                   # existing users → auth.user-changed (once)
 
 npx nx run-many -t serve                                          # run all on the host
 ```
@@ -127,6 +136,7 @@ Useful individual targets:
 | `npx nx run <service>:migrate-revert`                   | Revert the last migration                                                                                                                                                            |
 | `npx nx run auth-service:seed`                          | Seed dev users (`dependsOn: ["migrate"]`)                                                                                                                                            |
 | `npx nx run auth-service:kafka:create-topics`           | Create the auth topics, idempotently                                                                                                                                                 |
+| `npx nx run auth-service:users:publish-snapshots`       | Publish an `auth.user-changed` snapshot of every user, so services that copy users (vehicle-service's drivers) see users written before the topic existed                            |
 | `npx nx run trip-service:kafka:create-topics`           | Create `trip.status-changed`, idempotently                                                                                                                                           |
 | `npx nx run audit-service:kafka:create-topics`          | Create `audit.action-recorded`, idempotently                                                                                                                                         |
 | `npx nx run auth-service:generate-signing-key --name=X` | Create `apps/auth-service/secrets/X.{private,public}.pem` (never overwrites)                                                                                                         |
@@ -141,6 +151,7 @@ Useful individual targets:
 | `notification-service` | 7001 | 41001    | 9230      |
 | `trip-service`         | 7002 | 41002    | 9231      |
 | `audit-service`        | 7003 | 41003    | 9232      |
+| `vehicle-service`      | 7004 | 41004    | 9233      |
 
 pgbouncer 41500, Kafka 42000 (kafka-ui 42001), pgAdmin 43000, Redis 44000 (bull-board 44001),
 Mailhog SMTP 45000 (web UI 45001). The full map and the naming rules are in
@@ -209,7 +220,7 @@ not use `new Date()`, `Date.now()`, `Date.parse`, `toUTCString()`/`toLocaleStrin
 Import it from the shared lib, never from `dayjs` directly:
 
 ```ts
-import { dayjs } from '@masr3/libs';
+import { dayjs } from '@masr3/libs/date';
 
 dayjs().toISOString(); // now, for an event or a timestamp
 dayjs().add(ttlMs, 'millisecond').toDate(); // an expiry, when TypeORM needs a Date
@@ -273,6 +284,7 @@ To look at every email without sending one:
 | `notification-service` | `http://localhost:7001/api/docs` | `.../api/docs-json` |
 | `trip-service`         | `http://localhost:7002/api/docs` | `.../api/docs-json` |
 | `audit-service`        | `http://localhost:7003/api/docs` | `.../api/docs-json` |
+| `vehicle-service`      | `http://localhost:7004/api/docs` | `.../api/docs-json` |
 
 auth-service's Swagger groups the service-only routes (`/service-tokens`, `/internal/...`) under the
 `internal` tag; use **Authorize** with `bearer` for user and service tokens, `basic` for client

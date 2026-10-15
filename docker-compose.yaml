@@ -2,7 +2,7 @@ name: masr3
 
 # Port convention (host-published only; container-internal ports keep image defaults):
 #   41000-41099  databases
-#   41500       pgbouncer
+#   41500        pgbouncer
 #   42000-42099  kafka
 #   43000-43099  db/infra ui
 #   45000-45099  dev-only tools
@@ -142,6 +142,36 @@ services:
     networks:
       - masr3-network
 
+  vehicle-db:
+    image: postgres:16-alpine
+    container_name: masr3-vehicle-db
+    restart: unless-stopped
+
+    env_file:
+      - ./apps/vehicle-service/db.env
+
+    # Server and container clock in UTC; timestamptz values are stored as UTC regardless.
+    environment:
+      TZ: UTC
+
+    command: ['postgres', '-c', 'timezone=UTC', '-c', 'log_timezone=UTC']
+
+    ports:
+      - '41004:5432'
+
+    volumes:
+      - masr3_vehicle_db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - masr3-network
+
   # ========================================
   # PgBouncer
   # ========================================
@@ -180,6 +210,8 @@ services:
       trip-db:
         condition: service_healthy
       audit-db:
+        condition: service_healthy
+      vehicle-db:
         condition: service_healthy
 
     healthcheck:
@@ -362,6 +394,9 @@ volumes:
 
   masr3_audit_db_data:
     name: masr3_audit_db_data
+
+  masr3_vehicle_db_data:
+    name: masr3_vehicle_db_data
 
   masr3_kafka_data:
     name: masr3_kafka_data
