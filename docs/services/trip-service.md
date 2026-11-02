@@ -15,6 +15,7 @@ proposes a fare, drivers accept it or counter-offer, and the customer picks one 
 flowchart LR
   customer([Customer app]) -->|HTTP + access token| trip[trip-service :7002]
   driver([Driver app]) -->|HTTP + access token| trip
+  admin([Admin console]) -->|HTTP + access token| trip
   users{{auth.user-changed}} -->|group trip-service, from the beginning| trip
   trip -->|verify tokens locally| jwks[auth-service JWKS]
   trip -->|via pgbouncer :41500| db[(trip-db)]
@@ -48,6 +49,7 @@ erDiagram
     string recipientName "PARCEL only"
     string recipientPhone "PARCEL only"
     string packageDescription
+    enum requestedVehicleType "null = any type"
     timestamptz expiresAt
   }
   trip_status_history {
@@ -102,15 +104,15 @@ erDiagram
 
 ```mermaid
 stateDiagram-v2
-  [*] --> REQUESTED: customer requests
-  REQUESTED --> ACCEPTED: customer accepts an offer
+  [*] --> REQUESTED: customer, or admin for them
+  REQUESTED --> ACCEPTED: customer or admin accepts an offer
   REQUESTED --> EXPIRED: SYSTEM, at expiresAt
   REQUESTED --> CANCELLED: customer or admin
-  ACCEPTED --> DRIVER_ARRIVED: assigned driver
+  ACCEPTED --> DRIVER_ARRIVED: assigned driver or admin
   ACCEPTED --> CANCELLED: customer, driver or admin
-  DRIVER_ARRIVED --> IN_PROGRESS: assigned driver
+  DRIVER_ARRIVED --> IN_PROGRESS: assigned driver or admin
   DRIVER_ARRIVED --> CANCELLED: customer, driver or admin
-  IN_PROGRESS --> COMPLETED: assigned driver
+  IN_PROGRESS --> COMPLETED: assigned driver or admin
   COMPLETED --> [*]
   CANCELLED --> [*]
   EXPIRED --> [*]
@@ -118,6 +120,8 @@ stateDiagram-v2
 
 The table is `TRIP_TRANSITIONS` (`trip.constant.ts`). `assertTransitionAllowed`
 (`trip.policy.ts`) applies it, and `TripService.transition` is the only way a status changes.
+User routes go through `TripService.transitionAs(id, to, user)`, which takes the actor from the
+caller's role, so an admin makes a move as `ADMIN` on behalf of the customer or driver.
 The policy answers, in this order:
 
 1. `404` when it is not the actor's trip (ownership first, so strangers learn nothing).
@@ -128,9 +132,9 @@ The policy answers, in this order:
 
 ```mermaid
 stateDiagram-v2
-  [*] --> PENDING: driver offers
-  PENDING --> WITHDRAWN: driver withdraws
-  PENDING --> ACCEPTED: customer accepts this offer
+  [*] --> PENDING: driver, or admin for them, offers
+  PENDING --> WITHDRAWN: driver or admin withdraws
+  PENDING --> ACCEPTED: customer or admin accepts this offer
   PENDING --> REJECTED: trip accepted with another offer, or cancelled
   PENDING --> EXPIRED: trip expired
   ACCEPTED --> [*]
@@ -148,13 +152,18 @@ stateDiagram-v2
 
 ```mermaid
 sequenceDiagram
-  actor C as Customer
+  actor C as Customer or admin
   participant API as TripController
   participant S as TripService
+  participant U as users copy
   participant DB as trip-db
   participant Q as BullMQ trip-expiry
   C->>API: POST /trips
-  API->>S: create(command)
+  API->>S: create(dto, user)
+  S->>S: resolveTargetUserId (400 admin without customerId, 403 someone else's)
+  opt an admin named the customer
+    S->>U: findActiveOrFail(customerId, CUSTOMER) (404, 409)
+  end
   S->>DB: BEGIN
   S->>DB: INSERT trips (REQUESTED, expiresAt = now + TRIP_REQUEST_TTL_MS)
   S->>DB: INSERT trip_status_history (null to REQUESTED)
@@ -166,6 +175,11 @@ sequenceDiagram
 ```
 
 - A second active trip for the same customer hits `UQ_trips_active_customer`: `409`.
+- History, event and audit carry the caller as actor: `CUSTOMER`, or `ADMIN` with the admin's id
+  when an admin booked for the customer.
+- A customer booking for themselves is not looked up in the users copy: the token already
+  proves who they are, and the copy may lag a brand-new account.
+- `requestedVehicleType` (optional) asks for one vehicle type; null accepts any.
 - The expiry job is queued after the commit and not awaited. If Redis is down the request
   still succeeds, and the SWEEP job expires the trip instead.
 
@@ -200,13 +214,57 @@ sequenceDiagram
 - Offers are their own module (`modules/trip-offer/`). Accepting one is a trip transition, so
   `TripOfferService` calls `TripService`, and `TripService` closes the other offers in the same
   transaction.
-- **Withdrawing** locks the driver's own offer `FOR UPDATE`, checks it is still PENDING, marks
-  it WITHDRAWN and writes a `TRIP_OFFER` `WITHDRAWN` audit row, in one transaction.
-- **Accepting** finds the offer through the trip's `customerId`, so a stranger gets `404`
-  whatever the offer's state. Two concurrent accepts: one wins, the other gets `409`. If the
+- **Withdrawing** locks the offer `FOR UPDATE`, checks `canWithdrawOffer` (its driver, or an
+  admin) then `assertOfferPending`, marks it WITHDRAWN and writes a `TRIP_OFFER` `WITHDRAWN`
+  audit row, in one transaction.
+- **Accepting** loads the offer with its trip and checks `canManageTripOffers` (the trip's
+  customer, or an admin) before its status, so a stranger gets `404` whatever the offer's state. Two concurrent accepts: one wins, the other gets `409`. If the
   offer was withdrawn a moment earlier, the whole acceptance rolls back with `409`.
+- **Admins** make an offer for the driver in `driverId` (checked against the users copy),
+  accept for the customer, and withdraw for the driver; each is audited as the admin. The checks
+  live in `trip-offer.policy.ts`.
 - **Privacy:** drivers browsing open trips (`GET /trips/open`, or `GET /trips/:id` while
   REQUESTED) never see a parcel recipient's name or phone.
+
+### Change the requested vehicle type
+
+```mermaid
+sequenceDiagram
+  actor U as Customer or admin
+  participant S as TripService
+  participant DB as trip-db
+  U->>S: PATCH /trips/:id/vehicle-type { requestedVehicleType }
+  S->>DB: BEGIN, SELECT trip FOR UPDATE
+  S->>S: isTripParticipant (404)
+  S->>DB: any PENDING offer?
+  S->>S: assertRequestedVehicleTypeChangeAllowed (409)
+  alt same type as now
+    S-->>U: 200 trip, nothing written
+  else
+    S->>DB: UPDATE trips SET requestedVehicleType
+    S->>DB: INSERT outbox_events (audit TRIP UPDATED)
+    S->>DB: COMMIT
+    S-->>U: 200 trip
+  end
+```
+
+- Allowed only while the trip is REQUESTED, unexpired and has no pending offer: drivers offer on
+  the type the trip asks for. Withdrawn and rejected offers don't block it.
+- `null` accepts any vehicle type. The key itself is required, so a missing body is a `400`.
+
+### Lists
+
+One `TripService.list(query, user, scope)` serves three routes, with filters in
+`prepareListWhere`:
+
+| Route             | Roles            | Scope (`TripListScopeEnum`) | Rows                                               |
+| ----------------- | ---------------- | --------------------------- | -------------------------------------------------- |
+| `GET /trips`      | ADMIN            | `ALL`                       | every trip                                         |
+| `GET /trips/me`   | CUSTOMER, DRIVER | `MINE`                      | a customer's requests, a driver's assigned trips   |
+| `GET /trips/open` | DRIVER, ADMIN    | `OPEN`                      | REQUESTED and unexpired, without recipient details |
+
+Filters: `status`, `type`, `requestedVehicleType`, `customerId`, `driverId`. `MINE` pins the
+caller's own side over any id in the query; `OPEN` pins the status.
 
 ### Run, cancel and every other status change
 
@@ -305,15 +363,15 @@ are not kept. Malformed messages are skipped (`UserChangedEventDto`).
   per-status topics could deliver "cancelled" before "accepted". Consumers filter on
   `toStatus`.
 - The payload carries `tripId`, `type`, `customerId`, `driverId`, `fromStatus` (null on
-  creation), `toStatus`, `actor`, `actorId`, `reason`, `proposedFare` and `agreedFare`, plus
+  creation), `toStatus`, `actor`, `actorId`, `reason`, `proposedFare`, `requestedVehicleType`
+  and `agreedFare`, plus
   `eventId` and `occurredAt`.
 - It also carries `pickupAddress`, `dropoffAddress` and `currency`, so a consumer can describe
   the trip ("Tahrir Square → Zamalek, EGP 95.00") without calling trip-service.
 - Offers have no domain topic. Acceptance already emits REQUESTED → ACCEPTED.
 - **Audit events** go through the same outbox, in the same transaction as the change
-  (`AuditRecorderService` in `modules/audit/`): `TRIP` `CREATED` and `STATUS_CHANGED`,
-  `TRIP_OFFER` `SUBMITTED` and
-  `WITHDRAWN`. `changes` is `buildAuditChanges(before, after, TRIP_AUDITED_FIELDS)`.
+  (`AuditRecorderService` in `modules/audit/`): `TRIP` `CREATED`, `STATUS_CHANGED` and
+  `UPDATED` (vehicle type), `TRIP_OFFER` `SUBMITTED` and `WITHDRAWN`. `changes` is `buildAuditChanges(before, after, TRIP_AUDITED_FIELDS)`.
   The allow-list leaves the parcel recipient's name and phone out. The actor keeps its role
   (`TRIP_ACTOR_TO_ROLE`, applied by `TripService.auditActorFor`); SYSTEM expiry is a SYSTEM
   actor. See
@@ -323,7 +381,9 @@ are not kept. Malformed messages are skipped (`UserChangedEventDto`).
 
 Routes need a user access token, verified locally against auth-service's JWKS with the shared
 guard from `@masr3/libs` (see [`docs/authentication.md`](../authentication.md)). Roles are
-checked by `@Roles(...)`; ownership and assigned-driver checks stay in `TripService`. A
+checked by `@Roles(...)`; ownership, assigned-driver and admin-acting-for checks are pure
+functions in `trip.policy.ts` and `trip-offer.policy.ts`. Route by route:
+[`docs/permissions.md`](../permissions.md#trip-service). A
 logged-out or re-roled user's access token keeps working here until it expires, at most 5
 minutes.
 

@@ -10,9 +10,11 @@ import {
   SerializeOptions,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -40,25 +42,34 @@ class TripOfferController {
   constructor(private readonly tripOfferService: TripOfferService) {}
 
   @Post()
-  @Roles(UserRoleEnum.DRIVER)
+  @Roles(UserRoleEnum.DRIVER, UserRoleEnum.ADMIN)
   @SerializeOptions({ type: TripOfferResponseDto })
   @ApiOperation({
     summary: 'Make an offer',
     description:
-      'A driver offers to do a REQUESTED trip for `amount`. One pending offer per driver per trip; a driver with an active trip cannot offer.',
+      'A driver offers to do a REQUESTED trip for `amount`; an admin offers for the driver in `driverId`. One pending offer per driver per trip; a driver with an active trip cannot offer.',
   })
   @ApiCreatedResponse({ type: TripOfferResponseDto })
-  @ApiNotFoundResponse({ description: 'The trip does not exist.' })
+  @ApiBadRequestResponse({
+    description: 'Invalid body, or an admin left out `driverId`.',
+  })
+  @ApiForbiddenResponse({
+    description: "A driver sent another driver's `driverId`.",
+  })
+  @ApiNotFoundResponse({
+    description:
+      'The trip does not exist, or the admin named an unknown driver.',
+  })
   @ApiConflictResponse({
     description:
-      'The trip is no longer open, has expired, the driver is busy, or already has a pending offer on it.',
+      'The trip is no longer open, has expired, the driver is busy, deactivated, or already has a pending offer on it.',
   })
   async create(
     @CurrentUser() user: AuthenticatedUser,
     @Param('tripId', ParseIntPipe) tripId: number,
     @Body() dto: CreateTripOfferDto,
   ) {
-    return this.tripOfferService.create(tripId, user, dto.amount);
+    return this.tripOfferService.create(tripId, dto, user);
   }
 
   @Get()
@@ -79,13 +90,13 @@ class TripOfferController {
   }
 
   @Post(':offerId/accept')
-  @Roles(UserRoleEnum.CUSTOMER)
+  @Roles(UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.OK)
   @SerializeOptions({ type: TripResponseDto })
   @ApiOperation({
     summary: 'Accept an offer',
     description:
-      'Assigns the offering driver at the offered amount and moves the trip to ACCEPTED. Every other pending offer is rejected.',
+      'Assigns the offering driver at the offered amount and moves the trip to ACCEPTED. Every other pending offer is rejected. The trip’s customer, or an admin for them.',
   })
   @ApiParam({ name: 'offerId', type: Number, example: 12 })
   @ApiOkResponse({ type: TripResponseDto })
@@ -103,10 +114,13 @@ class TripOfferController {
   }
 
   @Post(':offerId/withdraw')
-  @Roles(UserRoleEnum.DRIVER)
+  @Roles(UserRoleEnum.DRIVER, UserRoleEnum.ADMIN)
   @HttpCode(HttpStatus.OK)
   @SerializeOptions({ type: TripOfferResponseDto })
-  @ApiOperation({ summary: 'Withdraw my pending offer' })
+  @ApiOperation({
+    summary: 'Withdraw a pending offer',
+    description: 'The offering driver, or an admin for them.',
+  })
   @ApiParam({ name: 'offerId', type: Number, example: 12 })
   @ApiOkResponse({ type: TripOfferResponseDto })
   @ApiNotFoundResponse({ description: 'Missing, or not the caller’s offer.' })

@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 
 import { TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 class TripResponseDto {
   @Expose()
@@ -75,6 +76,15 @@ class TripResponseDto {
   @Expose()
   @ApiProperty({ example: 'Small box, fragile', nullable: true })
   packageDescription: string | null;
+
+  @Expose()
+  @ApiProperty({
+    enum: VehicleTypeEnum,
+    example: VehicleTypeEnum.CAR,
+    nullable: true,
+    description: 'The vehicle type the trip asks for; null accepts any.',
+  })
+  requestedVehicleType: VehicleTypeEnum | null;
 
   @Expose()
   @ApiProperty({

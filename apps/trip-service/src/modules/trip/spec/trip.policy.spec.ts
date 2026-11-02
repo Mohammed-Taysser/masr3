@@ -1,13 +1,21 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import { TRIP_TRANSITIONS } from '../trip.constant';
-import { assertTransitionAllowed } from '../trip.policy';
+import {
+  actsForAnotherUser,
+  assertRequestedVehicleTypeChangeAllowed,
+  assertTransitionAllowed,
+  resolveTargetUserId,
+} from '../trip.policy';
 
 const CUSTOMER_ID = 1;
 const DRIVER_ID = 2;
@@ -146,5 +154,91 @@ describe('assertTransitionAllowed', () => {
         actorId,
       ),
     ).toThrow(/SYSTEM transition has no actorId/);
+  });
+});
+
+describe('admin moves', () => {
+  it.each([
+    [TripStatusEnum.REQUESTED, TripStatusEnum.ACCEPTED],
+    [TripStatusEnum.ACCEPTED, TripStatusEnum.DRIVER_ARRIVED],
+    [TripStatusEnum.DRIVER_ARRIVED, TripStatusEnum.IN_PROGRESS],
+    [TripStatusEnum.IN_PROGRESS, TripStatusEnum.COMPLETED],
+  ])('lets an admin move %s → %s for the user', (from, to) => {
+    expect(() =>
+      assertTransitionAllowed(tripIn(from), to, TripActorEnum.ADMIN, ADMIN_ID),
+    ).not.toThrow();
+  });
+});
+
+const userWith = (role: UserRoleEnum, id: number) =>
+  ({ id, role, email: 'x@masr3.local', tokenVersion: 0 }) as AuthenticatedUser;
+
+describe('actsForAnotherUser', () => {
+  it.each([
+    [UserRoleEnum.ADMIN, true],
+    [UserRoleEnum.CUSTOMER, false],
+    [UserRoleEnum.DRIVER, false],
+  ])('is %s → %s', (role, expected) => {
+    expect(actsForAnotherUser(userWith(role, 1))).toBe(expected);
+  });
+});
+
+describe('resolveTargetUserId', () => {
+  const admin = userWith(UserRoleEnum.ADMIN, 9);
+  const customer = userWith(UserRoleEnum.CUSTOMER, 3);
+
+  it('takes the id an admin names', () => {
+    expect(resolveTargetUserId(admin, 3, 'customerId')).toBe(3);
+  });
+
+  it('rejects an admin who names nobody', () => {
+    expect(() => resolveTargetUserId(admin, undefined, 'customerId')).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it.each([undefined, 3])(
+    'resolves a customer to themselves when they send %s',
+    (requested) => {
+      expect(resolveTargetUserId(customer, requested, 'customerId')).toBe(3);
+    },
+  );
+
+  it('forbids a customer naming someone else', () => {
+    expect(() => resolveTargetUserId(customer, 4, 'customerId')).toThrow(
+      ForbiddenException,
+    );
+  });
+});
+
+describe('assertRequestedVehicleTypeChangeAllowed', () => {
+  const open = {
+    id: 7,
+    status: TripStatusEnum.REQUESTED,
+    expiresAt: dayjs().add(5, 'minute').toDate(),
+  };
+
+  it('allows an open trip with no pending offer', () => {
+    expect(() =>
+      assertRequestedVehicleTypeChangeAllowed(open, false),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [
+      'is no longer REQUESTED',
+      { ...open, status: TripStatusEnum.ACCEPTED },
+      false,
+    ],
+    [
+      'has expired',
+      { ...open, expiresAt: dayjs().subtract(1, 'second').toDate() },
+      false,
+    ],
+    ['has a pending offer', open, true],
+  ])('conflicts when the trip %s', (_case, trip, hasPendingOffers) => {
+    expect(() =>
+      assertRequestedVehicleTypeChangeAllowed(trip, hasPendingOffers),
+    ).toThrow(ConflictException);
   });
 });

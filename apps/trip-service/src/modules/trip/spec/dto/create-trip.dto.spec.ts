@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
 import { TripTypeEnum } from '@masr3/libs/kafka';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 import CreateTripDto from '../../dto/create-trip.dto';
 
@@ -24,6 +25,24 @@ const errorsFor = (plain: Record<string, unknown>) =>
 describe('CreateTripDto', () => {
   it('accepts a valid ride without parcel fields', () => {
     expect(errorsFor(ride)).toEqual([]);
+  });
+
+  it('accepts a requested vehicle type and a customerId', () => {
+    expect(
+      errorsFor({
+        ...ride,
+        requestedVehicleType: VehicleTypeEnum.CAR,
+        customerId: 3,
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['requestedVehicleType', 'ROCKET'],
+    ['customerId', 0],
+    ['customerId', 1.5],
+  ])('rejects %s = %p', (property, value) => {
+    expect(errorsFor({ ...ride, [property]: value })).toContain(property);
   });
 
   it.each([

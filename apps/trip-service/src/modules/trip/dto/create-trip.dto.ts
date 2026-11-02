@@ -1,22 +1,35 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsInt,
   IsLatitude,
   IsLongitude,
   IsOptional,
   IsPhoneNumber,
   IsString,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
 
 import { TripTypeEnum } from '@masr3/libs/kafka';
 import { IsMoney } from '@masr3/libs/money';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 const isParcel = (dto: CreateTripDto) => dto.type === TripTypeEnum.PARCEL;
 
 class CreateTripDto {
+  @ApiPropertyOptional({
+    example: 3,
+    description:
+      'The customer (auth user id) the trip is for. Required for an admin; a customer omits it.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  customerId?: number;
+
   @ApiProperty({ enum: TripTypeEnum, example: TripTypeEnum.RIDE })
   @IsEnum(TripTypeEnum)
   type: TripTypeEnum;
@@ -79,6 +92,15 @@ class CreateTripDto {
   @IsString()
   @MaxLength(500)
   packageDescription?: string;
+
+  @ApiPropertyOptional({
+    enum: VehicleTypeEnum,
+    example: VehicleTypeEnum.CAR,
+    description: 'Omit to accept any vehicle type.',
+  })
+  @IsOptional()
+  @IsEnum(VehicleTypeEnum)
+  requestedVehicleType?: VehicleTypeEnum;
 }
 
 export default CreateTripDto;

@@ -8,29 +8,37 @@ import { DataSource, In, Repository } from 'typeorm';
 
 import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
 import { isUniqueViolation } from '@masr3/libs/database';
-import { dayjs } from '@masr3/libs/date';
 import {
   AuditActionEnum,
   AuditEntityTypeEnum,
   buildAuditChanges,
   buildUserAuditActor,
-  TripActorEnum,
   TripStatusEnum,
 } from '@masr3/libs/kafka';
 
 import AuditRecorderService from '../audit/audit-recorder.service';
-import TripOfferEntity from './entities/trip-offer.entity';
 import TripEntity from '../trip/entities/trip.entity';
 import {
   DRIVER_ACTIVE_TRIP_STATUSES,
+  ROLE_TO_TRIP_ACTOR,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip/trip.constant';
+import { actsForAnotherUser, resolveTargetUserId } from '../trip/trip.policy';
 import TripService from '../trip/trip.service';
+import UserService from '../user/user.service';
+import CreateTripOfferDto from './dto/create-trip-offer.dto';
+import TripOfferEntity from './entities/trip-offer.entity';
 import {
   TRIP_OFFER_AUDITED_FIELDS,
   UQ_TRIP_OFFERS_PENDING_DRIVER,
 } from './trip-offer.constant';
 import { TripOfferStatusEnum } from './trip-offer.enum';
+import {
+  assertOfferAllowed,
+  assertOfferPending,
+  canManageTripOffers,
+  canWithdrawOffer,
+} from './trip-offer.policy';
 
 @Injectable()
 class TripOfferService {
@@ -38,6 +46,7 @@ class TripOfferService {
     private readonly dataSource: DataSource,
     private readonly tripService: TripService,
     private readonly auditRecorder: AuditRecorderService,
+    private readonly userService: UserService,
     @InjectRepository(TripEntity)
     private readonly tripRepository: Repository<TripEntity>,
     @InjectRepository(TripOfferEntity)
@@ -48,9 +57,17 @@ class TripOfferService {
   // in progress (FOR UPDATE) makes them wait and then see the new status.
   async create(
     tripId: number,
-    driver: AuthenticatedUser,
-    amount: number,
+    dto: CreateTripOfferDto,
+    user: AuthenticatedUser,
   ): Promise<TripOfferEntity> {
+    const driverId = resolveTargetUserId(user, dto.driverId, 'driverId');
+
+    // Like a trip's customer, only a driver named by an admin is checked
+    // against the users copy.
+    if (actsForAnotherUser(user)) {
+      await this.userService.findActiveOrFail(driverId, UserRoleEnum.DRIVER);
+    }
+
     try {
       return await this.dataSource.transaction(async (manager) => {
         const trip = await manager.findOne(TripEntity, {
@@ -62,30 +79,20 @@ class TripOfferService {
           throw new NotFoundException(`Trip ${tripId} not found`);
         }
 
-        if (trip.status !== TripStatusEnum.REQUESTED) {
-          throw new ConflictException('The trip is no longer open for offers');
-        }
-
-        if (!dayjs(trip.expiresAt).isAfter(dayjs())) {
-          throw new ConflictException('The trip request has expired');
-        }
-
-        const busy = await manager.exists(TripEntity, {
+        const isDriverBusy = await manager.exists(TripEntity, {
           where: {
-            driverId: driver.id,
+            driverId,
             status: In([...DRIVER_ACTIVE_TRIP_STATUSES]),
           },
         });
 
-        if (busy) {
-          throw new ConflictException('You already have an active trip');
-        }
+        assertOfferAllowed(trip, isDriverBusy);
 
         const offer = await manager.save(
           manager.create(TripOfferEntity, {
             tripId,
-            driverId: driver.id,
-            amount,
+            driverId,
+            amount: dto.amount,
             status: TripOfferStatusEnum.PENDING,
           }),
         );
@@ -93,7 +100,7 @@ class TripOfferService {
         await this.auditRecorder.record(manager, {
           action: AuditActionEnum.SUBMITTED,
           entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: offer.id },
-          actor: buildUserAuditActor(driver),
+          actor: buildUserAuditActor(user),
           changes: buildAuditChanges(null, offer, TRIP_OFFER_AUDITED_FIELDS),
           metadata: null,
         });
@@ -103,7 +110,7 @@ class TripOfferService {
     } catch (error) {
       if (isUniqueViolation(error, UQ_TRIP_OFFERS_PENDING_DRIVER)) {
         throw new ConflictException(
-          'You already have a pending offer on this trip',
+          'The driver already has a pending offer on this trip',
         );
       }
 
@@ -117,10 +124,7 @@ class TripOfferService {
   ): Promise<TripOfferEntity[]> {
     const trip = await this.tripRepository.findOneBy({ id: tripId });
 
-    if (
-      !trip ||
-      (user.role !== UserRoleEnum.ADMIN && trip.customerId !== user.id)
-    ) {
+    if (!trip || !canManageTripOffers(trip, user)) {
       throw new NotFoundException(`Trip ${tripId} not found`);
     }
 
@@ -133,29 +137,28 @@ class TripOfferService {
   async accept(
     tripId: number,
     offerId: number,
-    customer: AuthenticatedUser,
+    user: AuthenticatedUser,
   ): Promise<TripEntity> {
     try {
       return await this.dataSource.transaction(async (manager) => {
-        // Looked up through the trip's customer, so a stranger gets 404
-        // whatever state the offer is in.
         const offer = await manager.findOne(TripOfferEntity, {
-          where: { id: offerId, tripId, trip: { customerId: customer.id } },
+          where: { id: offerId, tripId },
+          relations: { trip: true },
         });
 
-        if (!offer) {
+        // Access is checked before the status, so a stranger gets 404
+        // whatever state the offer is in.
+        if (!offer || !canManageTripOffers(offer.trip, user)) {
           throw new NotFoundException(`Offer ${offerId} not found`);
         }
 
-        if (offer.status !== TripOfferStatusEnum.PENDING) {
-          throw new ConflictException('The offer is no longer pending');
-        }
+        assertOfferPending(offer);
 
         return this.tripService.applyTransition(manager, {
           tripId,
           to: TripStatusEnum.ACCEPTED,
-          actor: TripActorEnum.CUSTOMER,
-          actorId: customer.id,
+          actor: ROLE_TO_TRIP_ACTOR[user.role],
+          actorId: user.id,
           changes: { driverId: offer.driverId, agreedFare: offer.amount },
           acceptedOfferId: offer.id,
         });
@@ -172,23 +175,19 @@ class TripOfferService {
   async withdraw(
     tripId: number,
     offerId: number,
-    driver: AuthenticatedUser,
+    user: AuthenticatedUser,
   ): Promise<TripOfferEntity> {
-    const owned = { id: offerId, tripId, driverId: driver.id };
-
     return this.dataSource.transaction(async (manager) => {
       const offer = await manager.findOne(TripOfferEntity, {
-        where: owned,
+        where: { id: offerId, tripId },
         lock: { mode: 'pessimistic_write' },
       });
 
-      if (!offer) {
+      if (!offer || !canWithdrawOffer(offer, user)) {
         throw new NotFoundException(`Offer ${offerId} not found`);
       }
 
-      if (offer.status !== TripOfferStatusEnum.PENDING) {
-        throw new ConflictException('The offer is no longer pending');
-      }
+      assertOfferPending(offer);
 
       await manager.update(
         TripOfferEntity,
@@ -203,7 +202,7 @@ class TripOfferService {
       await this.auditRecorder.record(manager, {
         action: AuditActionEnum.WITHDRAWN,
         entity: { type: AuditEntityTypeEnum.TRIP_OFFER, id: offerId },
-        actor: buildUserAuditActor(driver),
+        actor: buildUserAuditActor(user),
         changes: buildAuditChanges(offer, withdrawn, TRIP_OFFER_AUDITED_FIELDS),
         metadata: null,
       });

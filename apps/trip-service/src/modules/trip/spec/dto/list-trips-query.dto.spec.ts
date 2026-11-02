@@ -23,11 +23,29 @@ describe('ListTripsQueryDto', () => {
     expect(dto.limit).toBe(50);
   });
 
+  it('accepts an empty query: every filter is optional', () => {
+    expect(errorsFor({})).toEqual([]);
+  });
+
+  it('parses the customer and driver filters', () => {
+    const dto = plainToInstance(ListTripsQueryDto, {
+      customerId: '3',
+      driverId: '5',
+    });
+
+    expect(dto.customerId).toBe(3);
+    expect(dto.driverId).toBe(5);
+  });
+
   it.each([
     ['limit', '1001'],
     ['limit', '0'],
     ['page', '0'],
     ['status', 'FLYING'],
+    ['type', 'BOAT'],
+    ['requestedVehicleType', 'ROCKET'],
+    ['customerId', '0'],
+    ['driverId', 'abc'],
   ])('rejects %s = %p', (property, value) => {
     expect(errorsFor({ [property]: value })).toContain(property);
   });

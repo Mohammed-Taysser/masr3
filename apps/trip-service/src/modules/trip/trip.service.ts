@@ -27,8 +27,8 @@ import {
   buildAuditChanges,
   EventPayload,
   SYSTEM_AUDIT_ACTOR,
-  TripActorEnum,
   TripKafkaTopic,
+  TripActorEnum,
   TripStatusChangedEvent,
   TripStatusEnum,
   TripTypeEnum,
@@ -36,13 +36,18 @@ import {
 import { OutboxService } from '@masr3/libs/outbox';
 import { paginate, Paginated, paginationWindow } from '@masr3/libs/pagination';
 
-import AuditRecorderService from '../audit/audit-recorder.service';
 import { OutboxEventMap } from '../../kafka/kafka.interface';
-import ListTripsQueryDto from './dto/list-trips-query.dto';
+import AuditRecorderService from '../audit/audit-recorder.service';
 import TripOfferEntity from '../trip-offer/entities/trip-offer.entity';
+import { TripOfferStatusEnum } from '../trip-offer/trip-offer.enum';
+import UserService from '../user/user.service';
+import CreateTripDto from './dto/create-trip.dto';
+import ListTripsQueryDto from './dto/list-trips-query.dto';
+import UpdateRequestedVehicleTypeDto from './dto/update-requested-vehicle-type.dto';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import {
+  ROLE_TO_TRIP_ACTOR,
   TRIP_ACTOR_TO_ROLE,
   TRIP_AUDITED_FIELDS,
   TRIP_CURRENCY,
@@ -50,17 +55,15 @@ import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from './trip.constant';
-import { TripExpiryJobEnum } from './trip.enum';
-import { TripOfferStatusEnum } from '../trip-offer/trip-offer.enum';
+import { TripExpiryJobEnum, TripListScopeEnum } from './trip.enum';
+import { ExpireTripJobData, TransitionTripCommand } from './trip.interface';
 import {
-  CreateTripCommand,
-  ExpireTripJobData,
-  TransitionTripCommand,
-} from './trip.interface';
-import {
+  actsForAnotherUser,
+  assertRequestedVehicleTypeChangeAllowed,
   assertTransitionAllowed,
   canViewTrip,
   isTripParticipant,
+  resolveTargetUserId,
 } from './trip.policy';
 
 @Injectable()
@@ -72,6 +75,7 @@ class TripService {
     private readonly configService: ConfigService,
     private readonly outboxService: OutboxService<OutboxEventMap>,
     private readonly auditRecorder: AuditRecorderService,
+    private readonly userService: UserService,
     @InjectRepository(TripEntity)
     private readonly tripRepository: Repository<TripEntity>,
     @InjectRepository(TripStatusHistoryEntity)
@@ -79,11 +83,26 @@ class TripService {
     @InjectQueue(TRIP_EXPIRY_QUEUE) private readonly expiryQueue: Queue,
   ) {}
 
-  async create(command: CreateTripCommand): Promise<TripEntity> {
+  async create(
+    dto: CreateTripDto,
+    user: AuthenticatedUser,
+  ): Promise<TripEntity> {
+    const customerId = resolveTargetUserId(user, dto.customerId, 'customerId');
+    const actor = ROLE_TO_TRIP_ACTOR[user.role];
+
+    // Only a customer named by an admin is checked against the users copy:
+    // booking must not wait for the copy to catch up with a new account.
+    if (actsForAnotherUser(user)) {
+      await this.userService.findActiveOrFail(
+        customerId,
+        UserRoleEnum.CUSTOMER,
+      );
+    }
+
     const ttlMs = this.configService.getOrThrow<number>('TRIP_REQUEST_TTL_MS');
     // Parcel details mean nothing on a ride; drop them rather than store them.
     const parcel =
-      command.type === TripTypeEnum.PARCEL
+      dto.type === TripTypeEnum.PARCEL
         ? {}
         : {
             recipientName: null,
@@ -97,8 +116,9 @@ class TripService {
       trip = await this.dataSource.transaction(async (manager) => {
         const created = await manager.save(
           manager.create(TripEntity, {
-            ...command,
+            ...dto,
             ...parcel,
+            customerId,
             status: TripStatusEnum.REQUESTED,
             expiresAt: dayjs().add(ttlMs, 'millisecond').toDate(),
           }),
@@ -108,8 +128,8 @@ class TripService {
           tripId: created.id,
           fromStatus: null,
           toStatus: TripStatusEnum.REQUESTED,
-          actor: TripActorEnum.CUSTOMER,
-          actorId: command.customerId,
+          actor,
+          actorId: user.id,
           reason: null,
         });
 
@@ -119,8 +139,8 @@ class TripService {
           TripService.buildStatusChangedEvent(
             created,
             null,
-            TripActorEnum.CUSTOMER,
-            command.customerId,
+            actor,
+            user.id,
             null,
           ),
           String(created.id),
@@ -129,10 +149,7 @@ class TripService {
         await this.auditRecorder.record(manager, {
           action: AuditActionEnum.CREATED,
           entity: { type: AuditEntityTypeEnum.TRIP, id: created.id },
-          actor: TripService.auditActorFor(
-            TripActorEnum.CUSTOMER,
-            command.customerId,
-          ),
+          actor: TripService.auditActorFor(actor, user.id),
           changes: buildAuditChanges(null, created, TRIP_AUDITED_FIELDS),
           metadata: null,
         });
@@ -147,15 +164,9 @@ class TripService {
       throw error;
     }
 
-    this.scheduleExpiry(trip);
-
-    return trip;
-  }
-
-  // Queued after the commit, so a job never names a rolled-back trip. Not
-  // awaited: while Redis is down the request still succeeds, and the SWEEP job
-  // expires the trip instead.
-  private scheduleExpiry(trip: TripEntity): void {
+    // Queued after the commit, so a job never names a rolled-back trip. Not
+    // awaited: while Redis is down the request still succeeds, and the SWEEP job
+    // expires the trip instead.
     const data: ExpireTripJobData = { tripId: trip.id };
 
     this.expiryQueue
@@ -168,6 +179,121 @@ class TripService {
           `Could not queue expiry for trip ${trip.id}: ${error.message}`,
         ),
       );
+
+    return trip;
+  }
+
+  async list(
+    query: ListTripsQueryDto,
+    user: AuthenticatedUser,
+    scope: TripListScopeEnum,
+  ): Promise<Paginated<TripEntity>> {
+    const [items, total] = await this.tripRepository.findAndCount({
+      where: TripService.prepareListWhere(query, user, scope),
+      order: { createdAt: 'DESC', id: 'DESC' },
+      ...paginationWindow(query),
+    });
+
+    return paginate(items, total, query);
+  }
+
+  async findVisibleTrip(
+    tripId: number,
+    user: AuthenticatedUser,
+  ): Promise<TripEntity> {
+    const trip = await this.tripRepository.findOneBy({ id: tripId });
+
+    if (!trip || !canViewTrip(trip, user)) {
+      throw new NotFoundException(`Trip ${tripId} not found`);
+    }
+
+    // A driver browsing an open trip must not see the recipient's contact.
+    return isTripParticipant(trip, user)
+      ? trip
+      : { ...trip, recipientName: null, recipientPhone: null };
+  }
+
+  async findHistoryFor(
+    tripId: number,
+    user: AuthenticatedUser,
+  ): Promise<TripStatusHistoryEntity[]> {
+    const trip = await this.tripRepository.findOneBy({ id: tripId });
+
+    if (!trip || !isTripParticipant(trip, user)) {
+      throw new NotFoundException(`Trip ${tripId} not found`);
+    }
+
+    return this.historyRepository.find({
+      where: { tripId },
+      order: { createdAt: 'ASC', id: 'ASC' },
+    });
+  }
+
+  async updateRequestedVehicleType(
+    tripId: number,
+    dto: UpdateRequestedVehicleTypeDto,
+    user: AuthenticatedUser,
+  ): Promise<TripEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const trip = await manager.findOne(TripEntity, {
+        where: { id: tripId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!trip || !isTripParticipant(trip, user)) {
+        throw new NotFoundException(`Trip ${tripId} not found`);
+      }
+
+      const hasPendingOffers = await manager.exists(TripOfferEntity, {
+        where: { tripId, status: TripOfferStatusEnum.PENDING },
+      });
+
+      assertRequestedVehicleTypeChangeAllowed(trip, hasPendingOffers);
+
+      if (trip.requestedVehicleType === dto.requestedVehicleType) {
+        return trip;
+      }
+
+      await manager.update(
+        TripEntity,
+        { id: tripId },
+        { requestedVehicleType: dto.requestedVehicleType },
+      );
+
+      const updated = await manager.findOneByOrFail(TripEntity, {
+        id: tripId,
+      });
+
+      await this.auditRecorder.record(manager, {
+        action: AuditActionEnum.UPDATED,
+        entity: { type: AuditEntityTypeEnum.TRIP, id: tripId },
+        actor: TripService.auditActorFor(
+          ROLE_TO_TRIP_ACTOR[user.role],
+          user.id,
+        ),
+        changes: buildAuditChanges(trip, updated, TRIP_AUDITED_FIELDS),
+        metadata: null,
+      });
+
+      return updated;
+    });
+  }
+
+  // A user's own move: the actor follows the caller's role, so an admin acts
+  // for the customer or the assigned driver.
+  transitionAs(
+    tripId: number,
+    to: TripStatusEnum,
+    user: AuthenticatedUser,
+    reason?: string,
+  ): Promise<TripEntity> {
+    return this.transition({
+      tripId,
+      to,
+      actor: ROLE_TO_TRIP_ACTOR[user.role],
+      actorId: user.id,
+      reason,
+    });
   }
 
   async transition(command: TransitionTripCommand): Promise<TripEntity> {
@@ -184,9 +310,10 @@ class TripService {
     }
   }
 
-  // Runs inside the caller's transaction. The row lock serialises concurrent
-  // transitions of one trip: the second caller waits, then validates against
-  // the status the first one wrote.
+  // Runs inside the caller's transaction (TripOfferService accepts an offer
+  // through it). The row lock serialises concurrent transitions of one trip:
+  // the second caller waits, then validates against the status the first one
+  // wrote.
   async applyTransition(
     manager: EntityManager,
     command: TransitionTripCommand,
@@ -214,17 +341,17 @@ class TripService {
 
     // The expiry loop runs every few seconds; until it reaches this trip,
     // nobody may accept a request that is already past its deadline.
-    const isAcceptingExpiredRequest =
-      to === TripStatusEnum.ACCEPTED && !dayjs(trip.expiresAt).isAfter(dayjs());
-
-    if (isAcceptingExpiredRequest) {
+    if (
+      to === TripStatusEnum.ACCEPTED &&
+      !dayjs(trip.expiresAt).isAfter(dayjs())
+    ) {
       throw new ConflictException('The trip request has expired');
     }
 
-    const isExpiringEarly =
-      to === TripStatusEnum.EXPIRED && dayjs(trip.expiresAt).isAfter(dayjs());
-
-    if (isExpiringEarly) {
+    if (
+      to === TripStatusEnum.EXPIRED &&
+      dayjs(trip.expiresAt).isAfter(dayjs())
+    ) {
       throw new ConflictException('The trip request has not expired yet');
     }
 
@@ -234,12 +361,30 @@ class TripService {
       { ...changes, status: to },
     );
 
+    // No PENDING offer may outlive its trip's REQUESTED status. If the offer
+    // being accepted was withdrawn meanwhile, the whole transition rolls back.
     if (trip.status === TripStatusEnum.REQUESTED) {
-      await TripService.closePendingOffers(
-        manager,
-        tripId,
-        to,
-        acceptedOfferId,
+      if (acceptedOfferId !== undefined) {
+        const { affected } = await manager.update(
+          TripOfferEntity,
+          { id: acceptedOfferId, tripId, status: TripOfferStatusEnum.PENDING },
+          { status: TripOfferStatusEnum.ACCEPTED },
+        );
+
+        if (!affected) {
+          throw new ConflictException('The offer is no longer pending');
+        }
+      }
+
+      await manager.update(
+        TripOfferEntity,
+        { tripId, status: TripOfferStatusEnum.PENDING },
+        {
+          status:
+            to === TripStatusEnum.EXPIRED
+              ? TripOfferStatusEnum.EXPIRED
+              : TripOfferStatusEnum.REJECTED,
+        },
       );
     }
 
@@ -278,83 +423,49 @@ class TripService {
     return updated;
   }
 
-  async findVisibleTrip(
-    tripId: number,
-    user: AuthenticatedUser,
-  ): Promise<TripEntity> {
-    const trip = await this.tripRepository.findOneBy({ id: tripId });
-
-    if (!trip || !canViewTrip(trip, user)) {
-      throw new NotFoundException(`Trip ${tripId} not found`);
-    }
-
-    // A driver browsing an open trip must not see the recipient's contact.
-    return isTripParticipant(trip, user)
-      ? trip
-      : { ...trip, recipientName: null, recipientPhone: null };
-  }
-
-  async findHistoryFor(
-    tripId: number,
-    user: AuthenticatedUser,
-  ): Promise<TripStatusHistoryEntity[]> {
-    const trip = await this.tripRepository.findOneBy({ id: tripId });
-
-    if (!trip || !isTripParticipant(trip, user)) {
-      throw new NotFoundException(`Trip ${tripId} not found`);
-    }
-
-    return this.findHistory(tripId);
-  }
-
-  findHistory(tripId: number): Promise<TripStatusHistoryEntity[]> {
-    return this.historyRepository.find({
-      where: { tripId },
-      order: { createdAt: 'ASC', id: 'ASC' },
-    });
-  }
-
-  async listMine(
-    user: AuthenticatedUser,
+  private static prepareListWhere(
     query: ListTripsQueryDto,
-  ): Promise<Paginated<TripEntity>> {
-    return this.list(TripService.prepareMineWhere(user, query), query);
-  }
-
-  listOpen(query: ListTripsQueryDto): Promise<Paginated<TripEntity>> {
-    return this.list(
-      {
-        status: TripStatusEnum.REQUESTED,
-        expiresAt: MoreThan(dayjs().toDate()),
-      },
-      query,
-    );
-  }
-
-  private async list(
-    where: FindOptionsWhere<TripEntity>,
-    query: ListTripsQueryDto,
-  ): Promise<Paginated<TripEntity>> {
-    const [items, total] = await this.tripRepository.findAndCount({
-      where,
-      order: { createdAt: 'DESC', id: 'DESC' },
-      ...paginationWindow(query),
-    });
-
-    return paginate(items, total, query);
-  }
-
-  // A driver lists the trips they drive, everyone else the trips they asked for.
-  private static prepareMineWhere(
     user: AuthenticatedUser,
-    query: ListTripsQueryDto,
+    scope: TripListScopeEnum,
   ): FindOptionsWhere<TripEntity> {
-    return {
-      ...(user.role === UserRoleEnum.DRIVER
-        ? { driverId: user.id }
-        : { customerId: user.id }),
-      ...(query.status && { status: query.status }),
-    };
+    const where: FindOptionsWhere<TripEntity> = {};
+
+    if (query.customerId !== undefined) {
+      where.customerId = query.customerId;
+    }
+
+    if (query.driverId !== undefined) {
+      where.driverId = query.driverId;
+    }
+
+    if (query.status !== undefined) {
+      where.status = query.status;
+    }
+
+    if (query.type !== undefined) {
+      where.type = query.type;
+    }
+
+    if (query.requestedVehicleType !== undefined) {
+      where.requestedVehicleType = query.requestedVehicleType;
+    }
+
+    // MINE pins the caller's own side: a driver the trips they drive, a
+    // customer the trips they asked for.
+    if (scope === TripListScopeEnum.MINE) {
+      if (user.role === UserRoleEnum.DRIVER) {
+        where.driverId = user.id;
+      } else {
+        where.customerId = user.id;
+      }
+    }
+
+    if (scope === TripListScopeEnum.OPEN) {
+      where.status = TripStatusEnum.REQUESTED;
+      where.expiresAt = MoreThan(dayjs().toDate());
+    }
+
+    return where;
   }
 
   // The trip actor keeps its role in the audit trail; SYSTEM (the expiry job)
@@ -370,38 +481,6 @@ class TripService {
     }
 
     return { type: AuditActorTypeEnum.USER, id: actorId, role };
-  }
-
-  // No PENDING offer may outlive its trip's REQUESTED status. If the offer
-  // being accepted was withdrawn meanwhile, the whole transition rolls back.
-  private static async closePendingOffers(
-    manager: EntityManager,
-    tripId: number,
-    to: TripStatusEnum,
-    acceptedOfferId: number | undefined,
-  ): Promise<void> {
-    if (acceptedOfferId !== undefined) {
-      const { affected } = await manager.update(
-        TripOfferEntity,
-        { id: acceptedOfferId, tripId, status: TripOfferStatusEnum.PENDING },
-        { status: TripOfferStatusEnum.ACCEPTED },
-      );
-
-      if (!affected) {
-        throw new ConflictException('The offer is no longer pending');
-      }
-    }
-
-    await manager.update(
-      TripOfferEntity,
-      { tripId, status: TripOfferStatusEnum.PENDING },
-      {
-        status:
-          to === TripStatusEnum.EXPIRED
-            ? TripOfferStatusEnum.EXPIRED
-            : TripOfferStatusEnum.REJECTED,
-      },
-    );
   }
 
   private static buildStatusChangedEvent(
@@ -424,6 +503,7 @@ class TripService {
       pickupAddress: trip.pickupAddress,
       dropoffAddress: trip.dropoffAddress,
       proposedFare: trip.proposedFare,
+      requestedVehicleType: trip.requestedVehicleType,
       agreedFare: trip.agreedFare ?? null,
       currency: TRIP_CURRENCY,
     };

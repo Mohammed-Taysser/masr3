@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 
 import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
+import { dayjs } from '@masr3/libs/date';
 import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import TripEntity from './entities/trip.entity';
@@ -95,4 +97,61 @@ function canViewTrip(trip: TripAccess, user: AuthenticatedUser): boolean {
   );
 }
 
-export { assertTransitionAllowed, canViewTrip, isTripParticipant };
+// An admin acts for another user, named in the request; everyone else acts for
+// themselves, already proven by their token.
+function actsForAnotherUser(user: AuthenticatedUser): boolean {
+  return user.role === UserRoleEnum.ADMIN;
+}
+
+// The user a request acts for: a customer or driver acts for themselves, an
+// admin names the user in `field` (customerId or driverId).
+function resolveTargetUserId(
+  user: AuthenticatedUser,
+  requestedUserId: number | undefined,
+  field: string,
+): number {
+  if (actsForAnotherUser(user)) {
+    if (requestedUserId === undefined) {
+      throw new BadRequestException(`${field} is required for an admin`);
+    }
+
+    return requestedUserId;
+  }
+
+  if (requestedUserId !== undefined && requestedUserId !== user.id) {
+    throw new ForbiddenException(`${field} can only be your own id`);
+  }
+
+  return user.id;
+}
+
+// Drivers offer on the vehicle type a trip asks for, so it is fixed once a
+// pending offer exists.
+function assertRequestedVehicleTypeChangeAllowed(
+  trip: Pick<TripEntity, 'id' | 'status' | 'expiresAt'>,
+  hasPendingOffers: boolean,
+): void {
+  if (
+    trip.status !== TripStatusEnum.REQUESTED ||
+    !dayjs(trip.expiresAt).isAfter(dayjs())
+  ) {
+    throw new ConflictException(
+      `Trip ${trip.id} is no longer open for changes`,
+    );
+  }
+
+  if (hasPendingOffers) {
+    throw new ConflictException(
+      `Trip ${trip.id} already has offers; its vehicle type can no longer change`,
+    );
+  }
+}
+
+export {
+  actsForAnotherUser,
+  assertRequestedVehicleTypeChangeAllowed,
+  assertTransitionAllowed,
+  canViewTrip,
+  isTripParticipant,
+  resolveTargetUserId,
+};

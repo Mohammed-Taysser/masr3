@@ -1,6 +1,8 @@
 import { AuthenticatedUser, ROLES_KEY, UserRoleEnum } from '@masr3/libs/auth';
-import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
+import { TripStatusEnum } from '@masr3/libs/kafka';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
+import { TripListScopeEnum } from '../trip.enum';
 import TripController from '../trip.controller';
 import TripService from '../trip.service';
 
@@ -20,72 +22,92 @@ describe('TripController', () => {
   beforeEach(() => {
     tripService = {
       create: jest.fn(),
-      listMine: jest.fn(),
-      listOpen: jest.fn(),
+      list: jest.fn(),
       findVisibleTrip: jest.fn(),
       findHistoryFor: jest.fn(),
-      transition: jest.fn(),
+      updateRequestedVehicleType: jest.fn(),
+      transitionAs: jest.fn(),
     } as unknown as jest.Mocked<TripService>;
 
     controller = new TripController(tripService);
   });
 
   it.each([
-    ['create', [UserRoleEnum.CUSTOMER]],
+    ['create', [UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN]],
+    ['list', [UserRoleEnum.ADMIN]],
     ['listMine', [UserRoleEnum.CUSTOMER, UserRoleEnum.DRIVER]],
-    ['listOpen', [UserRoleEnum.DRIVER]],
+    ['listOpen', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
     ['findOne', undefined],
     ['findHistory', undefined],
+    ['updateRequestedVehicleType', [UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN]],
     [
       'cancel',
       [UserRoleEnum.CUSTOMER, UserRoleEnum.DRIVER, UserRoleEnum.ADMIN],
     ],
-    ['arrived', [UserRoleEnum.DRIVER]],
-    ['start', [UserRoleEnum.DRIVER]],
-    ['complete', [UserRoleEnum.DRIVER]],
+    ['arrived', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
+    ['start', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
+    ['complete', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
   ])('%s requires roles %p', (method, roles) => {
     expect(rolesOf(TripController.prototype, method)).toEqual(roles);
   });
 
-  it('creates the trip for the calling customer', async () => {
-    await controller.create(user(UserRoleEnum.CUSTOMER, 3), {
-      proposedFare: 50,
-    } as never);
+  it('passes the body and the caller to create', async () => {
+    const caller = user(UserRoleEnum.ADMIN, 9);
+    const dto = { proposedFare: 50, customerId: 3 } as never;
 
-    expect(tripService.create).toHaveBeenCalledWith({
-      proposedFare: 50,
-      customerId: 3,
-    });
+    await controller.create(caller, dto);
+
+    expect(tripService.create).toHaveBeenCalledWith(dto, caller);
   });
 
   it.each([
-    [UserRoleEnum.CUSTOMER, TripActorEnum.CUSTOMER],
-    [UserRoleEnum.DRIVER, TripActorEnum.DRIVER],
-    [UserRoleEnum.ADMIN, TripActorEnum.ADMIN],
-  ])('cancels as a %s with actor %s', async (role, actor) => {
-    await controller.cancel(user(role, 4), 7, { reason: 'changed plans' });
+    ['list', TripListScopeEnum.ALL],
+    ['listMine', TripListScopeEnum.MINE],
+    ['listOpen', TripListScopeEnum.OPEN],
+  ] as const)('%s lists with scope %s', async (method, scope) => {
+    const caller = user(UserRoleEnum.ADMIN, 9);
+    const query = { page: 1, limit: 20 };
 
-    expect(tripService.transition).toHaveBeenCalledWith({
-      tripId: 7,
-      to: TripStatusEnum.CANCELLED,
-      actor,
-      actorId: 4,
-      reason: 'changed plans',
-    });
+    await controller[method](caller, query);
+
+    expect(tripService.list).toHaveBeenCalledWith(query, caller, scope);
+  });
+
+  it('changes the requested vehicle type as the caller', async () => {
+    const caller = user(UserRoleEnum.CUSTOMER, 3);
+    const dto = { requestedVehicleType: VehicleTypeEnum.CAR };
+
+    await controller.updateRequestedVehicleType(caller, 7, dto);
+
+    expect(tripService.updateRequestedVehicleType).toHaveBeenCalledWith(
+      7,
+      dto,
+      caller,
+    );
+  });
+
+  it('cancels as the caller, with the reason', async () => {
+    const caller = user(UserRoleEnum.ADMIN, 4);
+
+    await controller.cancel(caller, 7, { reason: 'changed plans' });
+
+    expect(tripService.transitionAs).toHaveBeenCalledWith(
+      7,
+      TripStatusEnum.CANCELLED,
+      caller,
+      'changed plans',
+    );
   });
 
   it.each([
     ['arrived', TripStatusEnum.DRIVER_ARRIVED],
     ['start', TripStatusEnum.IN_PROGRESS],
     ['complete', TripStatusEnum.COMPLETED],
-  ] as const)('%s moves the trip to %s as the driver', async (method, to) => {
-    await controller[method](user(UserRoleEnum.DRIVER, 5), 7);
+  ] as const)('%s moves the trip to %s as the caller', async (method, to) => {
+    const caller = user(UserRoleEnum.DRIVER, 5);
 
-    expect(tripService.transition).toHaveBeenCalledWith({
-      tripId: 7,
-      to,
-      actor: TripActorEnum.DRIVER,
-      actorId: 5,
-    });
+    await controller[method](caller, 7);
+
+    expect(tripService.transitionAs).toHaveBeenCalledWith(7, to, caller);
   });
 });

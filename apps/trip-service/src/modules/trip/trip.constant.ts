@@ -5,7 +5,8 @@ import type TripEntity from './entities/trip.entity';
 
 const TRIP_CURRENCY = 'EGP';
 
-// from → to → who may make that move.
+// from → to → who may make that move. ADMIN may make every user move, acting
+// for the customer or the assigned driver.
 const TRIP_TRANSITIONS: Readonly<
   Record<
     TripStatusEnum,
@@ -13,12 +14,15 @@ const TRIP_TRANSITIONS: Readonly<
   >
 > = {
   [TripStatusEnum.REQUESTED]: {
-    [TripStatusEnum.ACCEPTED]: [TripActorEnum.CUSTOMER],
+    [TripStatusEnum.ACCEPTED]: [TripActorEnum.CUSTOMER, TripActorEnum.ADMIN],
     [TripStatusEnum.EXPIRED]: [TripActorEnum.SYSTEM],
     [TripStatusEnum.CANCELLED]: [TripActorEnum.CUSTOMER, TripActorEnum.ADMIN],
   },
   [TripStatusEnum.ACCEPTED]: {
-    [TripStatusEnum.DRIVER_ARRIVED]: [TripActorEnum.DRIVER],
+    [TripStatusEnum.DRIVER_ARRIVED]: [
+      TripActorEnum.DRIVER,
+      TripActorEnum.ADMIN,
+    ],
     [TripStatusEnum.CANCELLED]: [
       TripActorEnum.CUSTOMER,
       TripActorEnum.DRIVER,
@@ -26,7 +30,7 @@ const TRIP_TRANSITIONS: Readonly<
     ],
   },
   [TripStatusEnum.DRIVER_ARRIVED]: {
-    [TripStatusEnum.IN_PROGRESS]: [TripActorEnum.DRIVER],
+    [TripStatusEnum.IN_PROGRESS]: [TripActorEnum.DRIVER, TripActorEnum.ADMIN],
     [TripStatusEnum.CANCELLED]: [
       TripActorEnum.CUSTOMER,
       TripActorEnum.DRIVER,
@@ -34,7 +38,7 @@ const TRIP_TRANSITIONS: Readonly<
     ],
   },
   [TripStatusEnum.IN_PROGRESS]: {
-    [TripStatusEnum.COMPLETED]: [TripActorEnum.DRIVER],
+    [TripStatusEnum.COMPLETED]: [TripActorEnum.DRIVER, TripActorEnum.ADMIN],
   },
   [TripStatusEnum.COMPLETED]: {},
   [TripStatusEnum.CANCELLED]: {},
@@ -85,6 +89,7 @@ const TRIP_AUDITED_FIELDS: readonly (keyof TripEntity & string)[] = [
   'pickupAddress',
   'dropoffAddress',
   'proposedFare',
+  'requestedVehicleType',
   'agreedFare',
   'expiresAt',
 ];

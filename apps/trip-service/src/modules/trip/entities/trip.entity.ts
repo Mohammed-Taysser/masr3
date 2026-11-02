@@ -10,6 +10,7 @@ import {
 
 import { TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
 import { MONEY_COLUMN_OPTIONS } from '@masr3/libs/money';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 import {
   CUSTOMER_ACTIVE_TRIP_STATUSES,
@@ -51,10 +52,7 @@ class TripEntity {
   @Column({ type: 'enum', enum: TripTypeEnum })
   type: TripTypeEnum;
 
-  @Column({
-    type: 'enum',
-    enum: TripStatusEnum,
-  })
+  @Column({ type: 'enum', enum: TripStatusEnum })
   status: TripStatusEnum;
 
   @Column({ type: 'double precision' })
@@ -89,6 +87,9 @@ class TripEntity {
 
   @Column({ type: 'varchar', nullable: true })
   packageDescription: string | null;
+
+  @Column({ type: 'enum', enum: VehicleTypeEnum, nullable: true })
+  requestedVehicleType: VehicleTypeEnum | null;
 
   @Column({ type: 'timestamptz' })
   expiresAt: Date;

@@ -5,4 +5,12 @@ enum TripExpiryJobEnum {
   SWEEP = 'SWEEP',
 }
 
-export { TripExpiryJobEnum };
+// ALL: every trip (admin). MINE: the caller's own, as customer or assigned
+// driver. OPEN: REQUESTED trips still taking offers.
+enum TripListScopeEnum {
+  ALL = 'ALL',
+  MINE = 'MINE',
+  OPEN = 'OPEN',
+}
+
+export { TripExpiryJobEnum, TripListScopeEnum };

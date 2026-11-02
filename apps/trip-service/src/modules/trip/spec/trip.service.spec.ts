@@ -25,22 +25,35 @@ import {
   TripTypeEnum,
 } from '@masr3/libs/kafka';
 import { OutboxService } from '@masr3/libs/outbox';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 import AuditRecorderService from '../../audit/audit-recorder.service';
 import { OutboxEventMap } from '../../../kafka/kafka.interface';
 import TripOfferEntity from '../../trip-offer/entities/trip-offer.entity';
+import UserService from '../../user/user.service';
+import CreateTripDto from '../dto/create-trip.dto';
 import TripStatusHistoryEntity from '../entities/trip-status-history.entity';
 import TripEntity from '../entities/trip.entity';
 import {
   UQ_TRIPS_ACTIVE_CUSTOMER,
   UQ_TRIPS_ACTIVE_DRIVER,
 } from '../trip.constant';
-import { TripExpiryJobEnum } from '../trip.enum';
+import { TripExpiryJobEnum, TripListScopeEnum } from '../trip.enum';
 import { TripOfferStatusEnum } from '../../trip-offer/trip-offer.enum';
-import { CreateTripCommand } from '../trip.interface';
 import TripService from '../trip.service';
 
 const TTL_MS = 600000;
+
+const user = (role: UserRoleEnum, id: number) =>
+  ({
+    id,
+    role,
+    email: 'x@masr3.local',
+    tokenVersion: 0,
+  }) as AuthenticatedUser;
+
+const customer = user(UserRoleEnum.CUSTOMER, 1);
+const admin = user(UserRoleEnum.ADMIN, 9);
 
 const uniqueViolation = (constraint: string) =>
   new QueryFailedError(
@@ -58,9 +71,9 @@ describe('TripService', () => {
   let outboxService: jest.Mocked<OutboxService<OutboxEventMap>>;
   let auditRecorder: jest.Mocked<AuditRecorderService>;
   let expiryQueue: jest.Mocked<Queue>;
+  let userService: jest.Mocked<UserService>;
 
-  const command: CreateTripCommand = {
-    customerId: 1,
+  const dto: CreateTripDto = {
     type: TripTypeEnum.RIDE,
     pickupLatitude: 30.04442,
     pickupLongitude: 31.235712,
@@ -87,6 +100,7 @@ describe('TripService', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       findOneByOrFail: jest.fn(),
+      exists: jest.fn().mockResolvedValue(false),
     } as unknown as jest.Mocked<EntityManager>;
 
     dataSource = {
@@ -120,11 +134,16 @@ describe('TripService', () => {
       add: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<Queue>;
 
+    userService = {
+      findActiveOrFail: jest.fn(),
+    } as unknown as jest.Mocked<UserService>;
+
     service = new TripService(
       dataSource,
       configService,
       outboxService,
       auditRecorder,
+      userService,
       tripRepository,
       historyRepository,
       expiryQueue,
@@ -137,13 +156,14 @@ describe('TripService', () => {
 
   describe('create', () => {
     it('writes a REQUESTED trip and its creation history row in one transaction', async () => {
-      const result = await service.create(command);
+      const result = await service.create(dto, customer);
 
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
       expect(manager.create).toHaveBeenCalledWith(
         TripEntity,
         expect.objectContaining({
-          ...command,
+          ...dto,
+          customerId: customer.id,
           status: TripStatusEnum.REQUESTED,
           expiresAt: expect.any(Date),
         }),
@@ -153,14 +173,14 @@ describe('TripService', () => {
         fromStatus: null,
         toStatus: TripStatusEnum.REQUESTED,
         actor: TripActorEnum.CUSTOMER,
-        actorId: command.customerId,
+        actorId: customer.id,
         reason: null,
       });
       expect(result.id).toBe(trip.id);
     });
 
     it('enqueues a REQUESTED status-changed event in the same transaction', async () => {
-      await service.create(command);
+      await service.create(dto, customer);
 
       expect(outboxService.enqueue).toHaveBeenCalledWith(
         manager,
@@ -168,16 +188,16 @@ describe('TripService', () => {
         expect.objectContaining({
           tripId: trip.id,
           type: TripTypeEnum.RIDE,
-          customerId: command.customerId,
+          customerId: customer.id,
           driverId: null,
           fromStatus: null,
           toStatus: TripStatusEnum.REQUESTED,
           actor: TripActorEnum.CUSTOMER,
-          actorId: command.customerId,
+          actorId: customer.id,
           reason: null,
-          pickupAddress: command.pickupAddress,
-          dropoffAddress: command.dropoffAddress,
-          proposedFare: command.proposedFare,
+          pickupAddress: dto.pickupAddress,
+          dropoffAddress: dto.dropoffAddress,
+          proposedFare: dto.proposedFare,
           agreedFare: null,
           currency: 'EGP',
         }),
@@ -186,19 +206,19 @@ describe('TripService', () => {
     });
 
     it('records a TRIP CREATED audit by the customer in the same transaction', async () => {
-      await service.create(command);
+      await service.create(dto, customer);
 
       expect(auditRecorder.record).toHaveBeenCalledWith(manager, {
         action: AuditActionEnum.CREATED,
         entity: { type: AuditEntityTypeEnum.TRIP, id: trip.id },
         actor: {
           type: AuditActorTypeEnum.USER,
-          id: command.customerId,
+          id: customer.id,
           role: UserRoleEnum.CUSTOMER,
         },
         changes: expect.objectContaining({
           status: { old: null, new: TripStatusEnum.REQUESTED },
-          proposedFare: { old: null, new: command.proposedFare },
+          proposedFare: { old: null, new: dto.proposedFare },
         }),
         metadata: null,
       });
@@ -207,7 +227,7 @@ describe('TripService', () => {
     it('expires the request after TRIP_REQUEST_TTL_MS', async () => {
       const before = dayjs();
 
-      await service.create(command);
+      await service.create(dto, customer);
 
       const { expiresAt } = manager.create.mock
         .calls[0][1] as unknown as TripEntity;
@@ -218,7 +238,7 @@ describe('TripService', () => {
     });
 
     it('queues an EXPIRE_TRIP job delayed until the deadline, after the commit', async () => {
-      await service.create(command);
+      await service.create(dto, customer);
 
       const [name, data, options] = expiryQueue.add.mock.calls[0] as [
         string,
@@ -236,7 +256,7 @@ describe('TripService', () => {
     it('still creates the trip when the expiry job cannot be queued', async () => {
       expiryQueue.add.mockRejectedValue(new Error('Redis is down'));
 
-      await expect(service.create(command)).resolves.toMatchObject({
+      await expect(service.create(dto, customer)).resolves.toMatchObject({
         id: trip.id,
       });
     });
@@ -246,14 +266,16 @@ describe('TripService', () => {
         uniqueViolation(UQ_TRIPS_ACTIVE_CUSTOMER),
       );
 
-      await expect(service.create(command)).rejects.toThrow(ConflictException);
+      await expect(service.create(dto, customer)).rejects.toThrow(
+        ConflictException,
+      );
       expect(expiryQueue.add).not.toHaveBeenCalled();
     });
 
     it('turns the active-customer index violation into a conflict', async () => {
       manager.save.mockRejectedValue(uniqueViolation(UQ_TRIPS_ACTIVE_CUSTOMER));
 
-      await expect(service.create(command)).rejects.toThrow(
+      await expect(service.create(dto, customer)).rejects.toThrow(
         new ConflictException('The customer already has an active trip'),
       );
     });
@@ -263,7 +285,170 @@ describe('TripService', () => {
 
       manager.save.mockRejectedValue(error);
 
-      await expect(service.create(command)).rejects.toBe(error);
+      await expect(service.create(dto, customer)).rejects.toBe(error);
+    });
+  });
+
+  describe('create — by an admin', () => {
+    it('books for the named customer, checked against the users copy, and records the admin as actor', async () => {
+      await service.create({ ...dto, customerId: 3 }, admin);
+
+      expect(userService.findActiveOrFail).toHaveBeenCalledWith(
+        3,
+        UserRoleEnum.CUSTOMER,
+      );
+      expect(manager.create).toHaveBeenCalledWith(
+        TripEntity,
+        expect.objectContaining({ customerId: 3 }),
+      );
+      expect(manager.insert).toHaveBeenCalledWith(
+        TripStatusHistoryEntity,
+        expect.objectContaining({ actor: TripActorEnum.ADMIN, actorId: 9 }),
+      );
+      expect(auditRecorder.record).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({
+          actor: {
+            type: AuditActorTypeEnum.USER,
+            id: 9,
+            role: UserRoleEnum.ADMIN,
+          },
+        }),
+      );
+    });
+
+    it('writes nothing when the named customer is unknown', async () => {
+      userService.findActiveOrFail.mockRejectedValue(
+        new NotFoundException('CUSTOMER 3 not found'),
+      );
+
+      await expect(
+        service.create({ ...dto, customerId: 3 }, admin),
+      ).rejects.toThrow(NotFoundException);
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('does not consult the users copy when a customer books for themselves', async () => {
+      await service.create(dto, customer);
+
+      expect(userService.findActiveOrFail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateRequestedVehicleType', () => {
+    const requested = {
+      ...trip,
+      requestedVehicleType: null,
+    } as TripEntity;
+
+    beforeEach(() => {
+      manager.findOne.mockResolvedValue({ ...requested });
+      manager.findOneByOrFail.mockResolvedValue({
+        ...requested,
+        requestedVehicleType: VehicleTypeEnum.CAR,
+      } as TripEntity);
+    });
+
+    it.each([
+      ['its customer', customer],
+      ['an admin', admin],
+    ])(
+      'lets %s change it, under a row lock, and audits it',
+      async (_who, caller) => {
+        const result = await service.updateRequestedVehicleType(
+          trip.id,
+          { requestedVehicleType: VehicleTypeEnum.CAR },
+          caller,
+        );
+
+        expect(manager.findOne).toHaveBeenCalledWith(TripEntity, {
+          where: { id: trip.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        expect(manager.update).toHaveBeenCalledWith(
+          TripEntity,
+          { id: trip.id },
+          { requestedVehicleType: VehicleTypeEnum.CAR },
+        );
+        expect(auditRecorder.record).toHaveBeenCalledWith(
+          manager,
+          expect.objectContaining({
+            action: AuditActionEnum.UPDATED,
+            actor: expect.objectContaining({
+              id: caller.id,
+              role: caller.role,
+            }),
+            changes: expect.objectContaining({
+              requestedVehicleType: { old: null, new: VehicleTypeEnum.CAR },
+            }),
+          }),
+        );
+        expect(result.requestedVehicleType).toBe(VehicleTypeEnum.CAR);
+      },
+    );
+
+    it('answers 404 to another customer', async () => {
+      await expect(
+        service.updateRequestedVehicleType(
+          trip.id,
+          { requestedVehicleType: VehicleTypeEnum.CAR },
+          user(UserRoleEnum.CUSTOMER, 42),
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('conflicts once a pending offer exists, checking only PENDING offers', async () => {
+      manager.exists.mockResolvedValue(true);
+
+      await expect(
+        service.updateRequestedVehicleType(
+          trip.id,
+          { requestedVehicleType: VehicleTypeEnum.CAR },
+          customer,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(manager.exists).toHaveBeenCalledWith(TripOfferEntity, {
+        where: { tripId: trip.id, status: TripOfferStatusEnum.PENDING },
+      });
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('changes and audits nothing when the type is already the requested one', async () => {
+      const result = await service.updateRequestedVehicleType(
+        trip.id,
+        { requestedVehicleType: null },
+        customer,
+      );
+
+      expect(result).toEqual(requested);
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(auditRecorder.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('transitionAs', () => {
+    it.each([
+      [UserRoleEnum.DRIVER, TripActorEnum.DRIVER],
+      [UserRoleEnum.ADMIN, TripActorEnum.ADMIN],
+    ])('moves the trip as a %s actor', async (role, actor) => {
+      const transition = jest
+        .spyOn(service, 'transition')
+        .mockResolvedValue(trip);
+
+      await service.transitionAs(
+        trip.id,
+        TripStatusEnum.COMPLETED,
+        user(role, 5),
+      );
+
+      expect(transition).toHaveBeenCalledWith({
+        tripId: trip.id,
+        to: TripStatusEnum.COMPLETED,
+        actor,
+        actorId: 5,
+        reason: undefined,
+      });
     });
   });
 
@@ -449,7 +634,7 @@ describe('TripService', () => {
 
   describe('create — parcel details', () => {
     it('drops parcel fields on a ride', async () => {
-      await service.create({ ...command, recipientName: 'Mona' });
+      await service.create({ ...dto, recipientName: 'Mona' }, customer);
 
       expect(manager.create).toHaveBeenCalledWith(
         TripEntity,
@@ -462,12 +647,15 @@ describe('TripService', () => {
     });
 
     it('keeps parcel fields on a parcel', async () => {
-      await service.create({
-        ...command,
-        type: TripTypeEnum.PARCEL,
-        recipientName: 'Mona',
-        recipientPhone: '+201001234567',
-      });
+      await service.create(
+        {
+          ...dto,
+          type: TripTypeEnum.PARCEL,
+          recipientName: 'Mona',
+          recipientPhone: '+201001234567',
+        },
+        customer,
+      );
 
       expect(manager.create).toHaveBeenCalledWith(
         TripEntity,
@@ -647,13 +835,6 @@ describe('TripService', () => {
   });
 
   describe('visibility', () => {
-    const user = (role: UserRoleEnum, id: number) =>
-      ({
-        id,
-        role,
-        email: 'x@masr3.local',
-        tokenVersion: 0,
-      }) as AuthenticatedUser;
     const parcel = {
       ...trip,
       type: TripTypeEnum.PARCEL,
@@ -703,16 +884,18 @@ describe('TripService', () => {
         service.findHistoryFor(trip.id, user(UserRoleEnum.DRIVER, 99)),
       ).rejects.toThrow(NotFoundException);
     });
+  });
 
+  describe('list', () => {
     it.each([
       [UserRoleEnum.CUSTOMER, { customerId: 5 }],
       [UserRoleEnum.DRIVER, { driverId: 5 }],
-    ])('lists a %s their own trips', async (role, where) => {
-      await service.listMine(user(role, 5), {
-        page: 2,
-        limit: 10,
-        status: TripStatusEnum.COMPLETED,
-      });
+    ])('lists a %s their own trips (MINE)', async (role, where) => {
+      await service.list(
+        { page: 2, limit: 10, status: TripStatusEnum.COMPLETED },
+        user(role, 5),
+        TripListScopeEnum.MINE,
+      );
 
       expect(tripRepository.findAndCount).toHaveBeenCalledWith({
         where: { ...where, status: TripStatusEnum.COMPLETED },
@@ -722,8 +905,52 @@ describe('TripService', () => {
       });
     });
 
-    it('lists only open, unexpired trips', async () => {
-      await service.listOpen({ page: 1, limit: 20 });
+    it('pins MINE to the caller even when the query names another customer', async () => {
+      await service.list(
+        { page: 1, limit: 20, customerId: 42 },
+        user(UserRoleEnum.CUSTOMER, 5),
+        TripListScopeEnum.MINE,
+      );
+
+      const [{ where }] = tripRepository.findAndCount.mock.calls[0] as [
+        { where: { customerId: number } },
+      ];
+
+      expect(where.customerId).toBe(5);
+    });
+
+    it('lists every trip for an admin, filtered by the query (ALL)', async () => {
+      await service.list(
+        {
+          page: 1,
+          limit: 20,
+          customerId: 3,
+          driverId: 4,
+          type: TripTypeEnum.PARCEL,
+          requestedVehicleType: VehicleTypeEnum.VAN,
+        },
+        admin,
+        TripListScopeEnum.ALL,
+      );
+
+      expect(tripRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            customerId: 3,
+            driverId: 4,
+            type: TripTypeEnum.PARCEL,
+            requestedVehicleType: VehicleTypeEnum.VAN,
+          },
+        }),
+      );
+    });
+
+    it('lists only open, unexpired trips (OPEN), whatever status is asked', async () => {
+      await service.list(
+        { page: 1, limit: 20, status: TripStatusEnum.COMPLETED },
+        user(UserRoleEnum.DRIVER, 5),
+        TripListScopeEnum.OPEN,
+      );
 
       const [{ where }] = tripRepository.findAndCount.mock.calls[0] as [
         { where: { status: TripStatusEnum; expiresAt: unknown } },
@@ -734,11 +961,12 @@ describe('TripService', () => {
     });
   });
 
-  describe('findHistory', () => {
+  describe('findHistoryFor', () => {
     it('returns the history oldest first', async () => {
+      tripRepository.findOneBy.mockResolvedValue({ ...trip } as TripEntity);
       historyRepository.find.mockResolvedValue([]);
 
-      await service.findHistory(trip.id);
+      await service.findHistoryFor(trip.id, customer);
 
       expect(historyRepository.find).toHaveBeenCalledWith({
         where: { tripId: trip.id },

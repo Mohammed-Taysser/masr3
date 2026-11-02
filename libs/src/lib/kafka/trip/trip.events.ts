@@ -1,3 +1,4 @@
+import { VehicleTypeEnum } from '../../vehicle/vehicle.enum';
 import { BaseKafkaEvent } from '../kafka.events';
 import { TripActorEnum, TripStatusEnum, TripTypeEnum } from './trip.enum';
 import { TripKafkaTopic } from './trip.topics';
@@ -16,6 +17,7 @@ interface TripStatusChangedEvent extends BaseKafkaEvent {
   pickupAddress: string;
   dropoffAddress: string;
   proposedFare: number;
+  requestedVehicleType?: VehicleTypeEnum | null;
   agreedFare: number | null;
   // ISO 4217 code of both fares, e.g. EGP.
   currency: string;

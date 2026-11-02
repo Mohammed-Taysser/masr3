@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import AuditModule from '../audit/audit.module';
+import UserModule from '../user/user.module';
 import TripStatusHistoryEntity from './entities/trip-status-history.entity';
 import TripEntity from './entities/trip.entity';
 import TripExpiryProcessor from './trip-expiry.processor';
@@ -14,6 +15,7 @@ import TripService from './trip.service';
 @Module({
   imports: [
     AuditModule,
+    UserModule,
     TypeOrmModule.forFeature([TripEntity, TripStatusHistoryEntity]),
     BullModule.registerQueue({ name: TRIP_EXPIRY_QUEUE }),
   ],

@@ -1,21 +1,6 @@
-import { TripActorEnum, TripStatusEnum, TripTypeEnum } from '@masr3/libs/kafka';
+import { TripActorEnum, TripStatusEnum } from '@masr3/libs/kafka';
 
 import TripEntity from './entities/trip.entity';
-
-interface CreateTripCommand {
-  customerId: number;
-  type: TripTypeEnum;
-  pickupLatitude: number;
-  pickupLongitude: number;
-  pickupAddress: string;
-  dropoffLatitude: number;
-  dropoffLongitude: number;
-  dropoffAddress: string;
-  proposedFare: number;
-  recipientName?: string;
-  recipientPhone?: string;
-  packageDescription?: string;
-}
 
 interface TransitionTripCommand {
   tripId: number;
@@ -33,4 +18,4 @@ interface ExpireTripJobData {
   tripId: number;
 }
 
-export type { CreateTripCommand, ExpireTripJobData, TransitionTripCommand };
+export type { ExpireTripJobData, TransitionTripCommand };

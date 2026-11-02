@@ -28,27 +28,36 @@ describe('TripOfferController', () => {
   });
 
   it.each([
-    ['create', [UserRoleEnum.DRIVER]],
+    ['create', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
     ['list', [UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN]],
-    ['accept', [UserRoleEnum.CUSTOMER]],
-    ['withdraw', [UserRoleEnum.DRIVER]],
+    ['accept', [UserRoleEnum.CUSTOMER, UserRoleEnum.ADMIN]],
+    ['withdraw', [UserRoleEnum.DRIVER, UserRoleEnum.ADMIN]],
   ])('%s requires roles %p', (method, roles) => {
     expect(rolesOf(TripOfferController.prototype, method)).toEqual(roles);
   });
 
-  it('makes the offer as the calling driver', async () => {
-    const driver = user(UserRoleEnum.DRIVER, 5);
+  it('makes the offer with the body, as the caller', async () => {
+    const admin = user(UserRoleEnum.ADMIN, 9);
+    const dto = { amount: 90, driverId: 5 };
 
-    await controller.create(driver, 7, { amount: 90 });
+    await controller.create(admin, 7, dto);
 
-    expect(tripOfferService.create).toHaveBeenCalledWith(7, driver, 90);
+    expect(tripOfferService.create).toHaveBeenCalledWith(7, dto, admin);
   });
 
-  it('accepts as the calling customer', async () => {
+  it('accepts as the caller', async () => {
     const customer = user(UserRoleEnum.CUSTOMER, 1);
 
     await controller.accept(customer, 7, 12);
 
     expect(tripOfferService.accept).toHaveBeenCalledWith(7, 12, customer);
+  });
+
+  it('withdraws as the caller', async () => {
+    const admin = user(UserRoleEnum.ADMIN, 9);
+
+    await controller.withdraw(admin, 7, 12);
+
+    expect(tripOfferService.withdraw).toHaveBeenCalledWith(7, 12, admin);
   });
 });
