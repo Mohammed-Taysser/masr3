@@ -15,6 +15,7 @@ import {
   assertVerificationTransition,
   canAccessVehicle,
   resolveDriverId,
+  resolveListDriverId,
 } from '../vehicle.policy';
 
 const user = (role: UserRoleEnum, id = 5): AuthenticatedUser => ({
@@ -38,6 +39,21 @@ describe('canAccessVehicle', () => {
   ])('%s %p → %p', (role, id, expected) => {
     expect(canAccessVehicle({ driverId: 5 }, user(role, id))).toBe(expected);
   });
+});
+
+describe('resolveListDriverId', () => {
+  it('pins a driver to their own vehicles, whatever the query names', () => {
+    expect(resolveListDriverId(user(UserRoleEnum.DRIVER, 5), 99)).toBe(5);
+  });
+
+  it.each([99, undefined])(
+    'gives an admin the driver in the query (%p)',
+    (requested) => {
+      expect(resolveListDriverId(user(UserRoleEnum.ADMIN, 1), requested)).toBe(
+        requested,
+      );
+    },
+  );
 });
 
 describe('resolveDriverId', () => {

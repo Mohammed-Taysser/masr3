@@ -80,8 +80,11 @@ class VehicleController {
       'Every vehicle, newest first, filtered by driver, type or status and searched by plate, make, model or driver name.',
   })
   @ApiOkResponse({ type: PaginatedVehiclesResponseDto })
-  async list(@Query() query: ListVehiclesQueryDto) {
-    return this.vehicleService.list(query);
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListVehiclesQueryDto,
+  ) {
+    return this.vehicleService.list(query, user);
   }
 
   @Get('me')
@@ -96,7 +99,7 @@ class VehicleController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListVehiclesQueryDto,
   ) {
-    return this.vehicleService.listMine(user, query);
+    return this.vehicleService.list(query, user);
   }
 
   @Get(':id')

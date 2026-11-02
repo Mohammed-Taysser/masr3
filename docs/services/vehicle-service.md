@@ -189,6 +189,9 @@ The shared outbox from `@masr3/libs` (`OutboxModule.forRoot` in `AppModule`), on
 - Another driver's vehicle answers `404`, so a stranger learns nothing about it.
 - Lists are paginated (`page`, `limit`) and newest first. `search` matches the plate, make, model
   and the driver's first or last name.
+- Both list routes call one `VehicleService.list(query, user)`. `resolveListDriverId`
+  (`vehicle.policy.ts`) pins a driver to their own vehicles and lets an admin filter by any
+  `driverId`, or none.
 
 ## Events
 

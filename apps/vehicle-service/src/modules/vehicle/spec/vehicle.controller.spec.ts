@@ -27,7 +27,6 @@ describe('VehicleController', () => {
     service = {
       create: jest.fn(),
       list: jest.fn(),
-      listMine: jest.fn(),
       findVisible: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
@@ -43,13 +42,15 @@ describe('VehicleController', () => {
     const query = {} as ListVehiclesQueryDto;
 
     await controller.create(user, dto);
+    await controller.list(user, query);
     await controller.listMine(user, query);
     await controller.findOne(user, 12);
     await controller.update(user, 12, {});
     await controller.remove(user, 12);
 
     expect(service.create).toHaveBeenCalledWith(dto, user);
-    expect(service.listMine).toHaveBeenCalledWith(user, query);
+    expect(service.list).toHaveBeenNthCalledWith(1, query, user);
+    expect(service.list).toHaveBeenNthCalledWith(2, query, user);
     expect(service.findVisible).toHaveBeenCalledWith(12, user);
     expect(service.update).toHaveBeenCalledWith(12, {}, user);
     expect(service.remove).toHaveBeenCalledWith(12, user);

@@ -60,6 +60,15 @@ function resolveDriverId(
   return user.id;
 }
 
+// The driver whose vehicles a list shows: a driver only their own, an admin
+// the one in the query, or every driver when it names none.
+function resolveListDriverId(
+  user: AuthenticatedUser,
+  requestedDriverId: number | undefined,
+): number | undefined {
+  return user.role === UserRoleEnum.ADMIN ? requestedDriverId : user.id;
+}
+
 function assertVerificationTransition(
   vehicle: VehicleStatuses,
   to: VehicleVerificationStatusEnum,
@@ -117,4 +126,5 @@ export {
   assertVerificationTransition,
   canAccessVehicle,
   resolveDriverId,
+  resolveListDriverId,
 };

@@ -125,7 +125,7 @@ describe('VehicleService', () => {
       ({ page: 2, limit: 10, ...overrides }) as ListVehiclesQueryDto;
 
     it('pages through vehicles with their driver, newest first', async () => {
-      const result = await service.list(query());
+      const result = await service.list(query(), admin);
 
       expect(repository.findAndCount).toHaveBeenCalledWith({
         where: [{}],
@@ -144,6 +144,7 @@ describe('VehicleService', () => {
           type: VehicleTypeEnum.CAR,
           verificationStatus: VehicleVerificationStatusEnum.APPROVED,
         }),
+        admin,
       );
 
       const filters = {
@@ -162,10 +163,18 @@ describe('VehicleService', () => {
     });
 
     it("limits a driver's list to their own vehicles", async () => {
-      await service.listMine(driver, query({ driverId: 99 }));
+      await service.list(query({ driverId: 99 }), driver);
 
       expect(repository.findAndCount.mock.calls[0][0]?.where).toEqual([
         { driverId: 5 },
+      ]);
+    });
+
+    it('lets an admin filter by a driver', async () => {
+      await service.list(query({ driverId: 99 }), admin);
+
+      expect(repository.findAndCount.mock.calls[0][0]?.where).toEqual([
+        { driverId: 99 },
       ]);
     });
   });

@@ -43,6 +43,7 @@ import {
   assertVerificationTransition,
   canAccessVehicle,
   resolveDriverId,
+  resolveListDriverId,
 } from './vehicle.policy';
 
 @Injectable()
@@ -54,36 +55,6 @@ class VehicleService {
     private readonly auditRecorder: AuditRecorderService,
     private readonly driverService: DriverService,
   ) {}
-
-  async list(query: ListVehiclesQueryDto): Promise<Paginated<VehicleEntity>> {
-    return this.findPage(VehicleService.prepareListWhere(query), query);
-  }
-
-  async listMine(
-    user: AuthenticatedUser,
-    query: ListVehiclesQueryDto,
-  ): Promise<Paginated<VehicleEntity>> {
-    return this.findPage(
-      VehicleService.prepareListWhere({ ...query, driverId: user.id }),
-      query,
-    );
-  }
-
-  async findVisible(
-    id: number,
-    user: AuthenticatedUser,
-  ): Promise<VehicleEntity> {
-    const vehicle = await this.vehicleRepository.findOne({
-      where: { id },
-      relations: { driver: true },
-    });
-
-    if (!vehicle || !canAccessVehicle(vehicle, user)) {
-      throw new NotFoundException(`Vehicle ${id} not found`);
-    }
-
-    return vehicle;
-  }
 
   async create(
     dto: CreateVehicleDto,
@@ -133,6 +104,36 @@ class VehicleService {
     }
 
     return this.findVisible(id, user);
+  }
+
+  async list(
+    query: ListVehiclesQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<Paginated<VehicleEntity>> {
+    const [items, total] = await this.vehicleRepository.findAndCount({
+      where: VehicleService.prepareListWhere(query, user),
+      relations: { driver: true },
+      order: { createdAt: 'DESC', id: 'DESC' },
+      ...paginationWindow(query),
+    });
+
+    return paginate(items, total, query);
+  }
+
+  async findVisible(
+    id: number,
+    user: AuthenticatedUser,
+  ): Promise<VehicleEntity> {
+    const vehicle = await this.vehicleRepository.findOne({
+      where: { id },
+      relations: { driver: true },
+    });
+
+    if (!vehicle || !canAccessVehicle(vehicle, user)) {
+      throw new NotFoundException(`Vehicle ${id} not found`);
+    }
+
+    return vehicle;
   }
 
   async update(
@@ -268,20 +269,6 @@ class VehicleService {
     return this.findVisible(id, user);
   }
 
-  private async findPage(
-    where: FindOptionsWhere<VehicleEntity>[],
-    query: ListVehiclesQueryDto,
-  ): Promise<Paginated<VehicleEntity>> {
-    const [items, total] = await this.vehicleRepository.findAndCount({
-      where,
-      relations: { driver: true },
-      order: { createdAt: 'DESC', id: 'DESC' },
-      ...paginationWindow(query),
-    });
-
-    return paginate(items, total, query);
-  }
-
   // Unsets the driver's current default (other than keepId), audited like any
   // other change. The partial unique index catches a concurrent default.
   private async clearDefault(
@@ -352,17 +339,26 @@ class VehicleService {
 
   private static prepareListWhere(
     query: ListVehiclesQueryDto,
+    user: AuthenticatedUser,
   ): FindOptionsWhere<VehicleEntity>[] {
-    const where: FindOptionsWhere<VehicleEntity> = {
-      ...(query.driverId && { driverId: query.driverId }),
-      ...(query.type && { type: query.type }),
-      ...(query.verificationStatus && {
-        verificationStatus: query.verificationStatus,
-      }),
-      ...(query.operationalStatus && {
-        operationalStatus: query.operationalStatus,
-      }),
-    };
+    const driverId = resolveListDriverId(user, query.driverId);
+    const where: FindOptionsWhere<VehicleEntity> = {};
+
+    if (driverId !== undefined) {
+      where.driverId = driverId;
+    }
+
+    if (query.type !== undefined) {
+      where.type = query.type;
+    }
+
+    if (query.verificationStatus !== undefined) {
+      where.verificationStatus = query.verificationStatus;
+    }
+
+    if (query.operationalStatus !== undefined) {
+      where.operationalStatus = query.operationalStatus;
+    }
 
     if (!query.search) {
       return [where];
