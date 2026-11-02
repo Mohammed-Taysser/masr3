@@ -233,6 +233,7 @@ footers/<category>.<locale>.hbs
 | `DELETE /notifications/me/:id`                                 | owner    | archive; the record is kept                               |
 | `GET /notifications/me/preferences`                            | any user | one switch per channel                                    |
 | `PUT /notifications/me/preferences`                            | any user | change some switches                                      |
+| `GET/PUT /notifications/users/:userId/preferences`             | ADMIN    | read or change a user's switches, for support             |
 | `GET /admin/notifications/deliveries?status=&channel=&userId=` | ADMIN    | the delivery log; `status=FAILED` is the dead-letter view |
 | `POST /admin/notifications/deliveries/:id/retry`               | ADMIN    | re-queue a FAILED delivery (`notification.policy.ts`)     |
 

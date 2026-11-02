@@ -1,12 +1,26 @@
-import { Body, Controller, Get, Put, SerializeOptions } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Put,
+  SerializeOptions,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 
-import { AuthenticatedUser, CurrentUser } from '@masr3/libs/auth';
+import {
+  AuthenticatedUser,
+  CurrentUser,
+  Roles,
+  UserRoleEnum,
+} from '@masr3/libs/auth';
 
 import ChannelPreferencesResponseDto from './dto/channel-preferences-response.dto';
 import UpdateChannelPreferencesDto from './dto/update-channel-preferences.dto';
@@ -14,11 +28,11 @@ import PreferencesService from './preferences.service';
 
 @ApiTags('Notification preferences')
 @ApiBearerAuth()
-@Controller('notifications/me/preferences')
+@Controller('notifications')
 class PreferencesController {
   constructor(private readonly preferencesService: PreferencesService) {}
 
-  @Get()
+  @Get('me/preferences')
   @SerializeOptions({ type: ChannelPreferencesResponseDto })
   @ApiOperation({
     summary: 'My channel preferences',
@@ -30,7 +44,7 @@ class PreferencesController {
     return this.preferencesService.find(user.id);
   }
 
-  @Put()
+  @Put('me/preferences')
   @SerializeOptions({ type: ChannelPreferencesResponseDto })
   @ApiOperation({
     summary: 'Change my channel preferences',
@@ -42,6 +56,36 @@ class PreferencesController {
     @Body() body: UpdateChannelPreferencesDto,
   ) {
     return this.preferencesService.update(user.id, body);
+  }
+
+  @Get('users/:userId/preferences')
+  @Roles(UserRoleEnum.ADMIN)
+  @SerializeOptions({ type: ChannelPreferencesResponseDto })
+  @ApiOperation({
+    summary: "A user's channel preferences",
+    description: 'Admin only, for support.',
+  })
+  @ApiParam({ name: 'userId', type: Number, example: 3 })
+  @ApiOkResponse({ type: ChannelPreferencesResponseDto })
+  findForUser(@Param('userId', ParseIntPipe) userId: number) {
+    return this.preferencesService.find(userId);
+  }
+
+  @Put('users/:userId/preferences')
+  @Roles(UserRoleEnum.ADMIN)
+  @SerializeOptions({ type: ChannelPreferencesResponseDto })
+  @ApiOperation({
+    summary: "Change a user's channel preferences",
+    description:
+      'Admin only, for support (e.g. a user asks by phone to stop SMS). Switches left out keep their value.',
+  })
+  @ApiParam({ name: 'userId', type: Number, example: 3 })
+  @ApiOkResponse({ type: ChannelPreferencesResponseDto })
+  updateForUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body: UpdateChannelPreferencesDto,
+  ) {
+    return this.preferencesService.update(userId, body);
   }
 }
 
