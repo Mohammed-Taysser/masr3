@@ -208,7 +208,8 @@ topic, so it has no `kafka:create-topics` target.
 
 Routes need a user access token, verified locally against auth-service's JWKS with the shared
 guard from `@masr3/libs` (see [`docs/authentication.md`](../authentication.md)). Roles are checked
-by `@Roles(...)`; ownership is checked in `vehicle.policy.ts`.
+by `@Roles(...)`; ownership is checked in `vehicle.policy.ts`. Route by route:
+[`docs/permissions.md`](../permissions.md#vehicle-service).
 
 ## Planned
 

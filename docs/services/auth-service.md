@@ -248,6 +248,8 @@ from `@masr3/libs`. The guard fetches `GET /api/.well-known/jwks.json` once, cac
 | `GET /internal/users/:id/contact`                                           | service token, `USERS_CONTACT_READ` |
 | `GET /.well-known/jwks.json`, `GET /health`                                 | public                              |
 
+Route by route, with what each role may touch: [`docs/permissions.md`](../permissions.md#auth-service).
+
 ## Events
 
 Keyed by `userId`. Contracts: `AuthEventMap` in `libs/src/lib/kafka/auth/`. All go through the

@@ -71,10 +71,44 @@ doc, setup and commands.
   `prepareListWhere(query)` (static when it needs no `this`) to `findAndCount`, together with
   order and `...paginationWindow(query)`, then returns `paginate(items, total, query)`; it never
   builds the `where` inline. Every list orders by a stable key ending in `id`
-  (`{ createdAt: 'DESC', id: 'DESC' }` by default). The method returns
-  `FindOptionsWhere<Entity>` built from the query's optional fields
-  (`...(query.status && { status: query.status })`). Examples: `UsersService`,
-  `AuditService`, `DeliveryLogService`, `InboxService`, `TripService.prepareMineWhere`.
+  (`{ createdAt: 'DESC', id: 'DESC' }` by default). Examples: `UsersService`, `AuditService`,
+  `DeliveryLogService`, `InboxService`, `TripService`, `VehicleService`.
+- **Optional fields are added with `if`, never a conditional spread.** Start from an empty object
+  and add each field the query sets:
+  `if (query.status !== undefined) { where.status = query.status; }`, not
+  `...(query.status && { status: query.status })`. A conditional spread silently drops `false`
+  and `0`. Use a plain truthy check only for a flag where `false` means "no filter"
+  (`if (query.unread)`). The same goes for any options object (BullMQ job options).
+- **One list method per resource.** `list` and `listMine` (or `listOpen`) are one service method
+  that takes the caller and, when needed, a scope enum (`TripListScopeEnum { ALL, MINE, OPEN }`);
+  each route passes its own scope. `prepareListWhere` pins the caller's side for MINE.
+- **Controllers stay thin.** A route calls one service method with its params, body, query and
+  the caller (`@CurrentUser()`, never `@Req()`). No role-to-actor mapping, command building,
+  branching or private helpers in a controller; that belongs in the service or a policy.
+- **No single-use wrappers.** Don't create a method used once just to wrap a few lines: inline
+  it. Exceptions: `prepare*Where`, policy functions, and methods that hold real logic (about 15
+  lines or more) or name a distinct phase (a template registry's load steps, a renderer's
+  per-channel branch).
+- **Method order in a service:** public CRUD first, in CRUD order (`create`, `list` / `find*`,
+  `update`, `remove`), then the other public operations, then private methods, then private
+  static ones.
+- **Policies decide access and state rules.** Every "who may act on this row" decision (own,
+  assigned, admin for anyone, an admin-named target) and every precondition of a state change
+  is a pure function in `<module>.policy.ts`, with its own spec in `spec/<module>.policy.spec.ts`.
+  - Predicates are `can…` / `is…` / `acts…` and return a boolean; the caller answers `false`
+    with 404, so a stranger learns nothing. Guards are `assert…` and throw inline.
+  - A service fetches (locked when it writes), asks the policy, then writes. It never compares
+    `user.role` or owner ids inline. `prepareListWhere` is the one place that may scope by role.
+  - Examples: `trip.policy.ts`, `trip-offer.policy.ts`, `vehicle.policy.ts`,
+    `notification.policy.ts`.
+- **Admin acts for a user.** A user route that admins also need allows `ADMIN` in `@Roles` and
+  takes an optional target id in the body (`customerId`, `driverId`). The policy resolves it
+  (`resolveTargetUserId`, vehicle's `resolveDriverId`): required for an admin (400), only the
+  caller's own id for anyone else (403). A target named by an admin is checked against the
+  service's users copy (404 unknown, 409 deactivated). The actor recorded in history, events and
+  audit is the admin. Matrix: [`docs/permissions.md`](docs/permissions.md).
+- **Tests are part of the change.** Add or update specs with every behaviour change, including
+  coverage that was missing.
 - **Comments are sparse.** Comment only a non-obvious _why_, in a line or two. No docblocks
   restating the code.
 - **Prettier** uses `singleQuote`. Run it on every file you touch.
@@ -90,8 +124,9 @@ doc, setup and commands.
   - Enums, constants, functions and interfaces are declared, then exported once at the bottom
     with `export { A, B };` (use `export type { … }` for interfaces and types).
 - **Literals:** the moment a literal repeats, it goes into an enum or a constant.
-  - Enums live in `<module>.enum.ts`, constants in `<module>.constant.ts`, interfaces in
-    `<module>.interface.ts`. Each is one flat file per module, next to the module.
+  - Enums live in `<module>.enum.ts`, constants in `<module>.constant.ts`, interfaces and type
+    aliases in `<module>.interface.ts`. Each is one flat file per module, next to the module.
+    Never declare a type inline in a service, consumer or constant file.
   - Enum names end in `Enum` (`TripStatusEnum`), and their values are UPPERCASE strings.
   - Use a plain `enum`, never `const enum`, because files are transpiled in isolation.
 - **Dates:** always `dayjs`, imported from `@masr3/libs/date`, and always UTC (`APP_TIMEZONE`).
@@ -139,14 +174,15 @@ apps/<svc>/
     kafka/                            when the service uses Kafka. kafka-consumer.service.ts extends libs'
                                       BaseKafkaConsumer (+ kafka.module.ts); kafka.constant.ts: its DTO per
                                       consumed topic and <SVC>_OUTBOX_RELAY_QUEUE; kafka.interface.ts:
-                                      OutboxEventMap, the topics it publishes through its outbox
-                                      (OutboxModule.forRoot({ queue }) from libs in AppModule)
+                                      every Kafka type — ConsumedKafkaTopic / ConsumedEventMap (what it
+                                      consumes) and OutboxEventMap, the topics it publishes through its
+                                      outbox (OutboxModule.forRoot({ queue }) from libs in AppModule)
     queue/                            BullMQ root module: the Redis connection (when the service has jobs)
     modules/audit/                    AuditRecorderService (when it produces audit events; needs the outbox)
     modules/<name>/
       entities/<name>.entity.ts
       dto/*.dto.ts
-      <name>.enum.ts  <name>.constant.ts  <name>.interface.ts
+      <name>.enum.ts  <name>.constant.ts  <name>.interface.ts  <name>.policy.ts
       <name>.module.ts  <name>.service.ts  <name>.controller.ts
       spec/                           *.spec.ts (dto specs in spec/dto/)
 ```

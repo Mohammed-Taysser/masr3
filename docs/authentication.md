@@ -124,6 +124,9 @@ integer before it is turned back into a number.
 
 ## Who may call what
 
+This section is about tokens. Roles, ownership and admins acting for a user, route by route,
+are in [`permissions.md`](permissions.md).
+
 The global `AuthenticationGuard` is **closed by default** and decides from route metadata:
 
 | Route                                              | Access token                                     | Refresh token | Service token                                                  |
