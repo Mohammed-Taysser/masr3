@@ -14,6 +14,7 @@ import {
 
 import { dayjs } from '@masr3/libs/date';
 
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 import {
   toPlateNumber,
   trim,
@@ -24,7 +25,6 @@ import {
   VEHICLE_NAME_MAX_LENGTH,
   VEHICLE_PLATE_NUMBER_MAX_LENGTH,
 } from '../vehicle.constant';
-import { VehicleTypeEnum } from '../vehicle.enum';
 
 // No status fields: a new vehicle is PENDING and INACTIVE, and only an admin
 // changes either, through its own endpoint.

@@ -1,12 +1,12 @@
 import { AuthenticatedUser, ROLES_KEY, UserRoleEnum } from '@masr3/libs/auth';
 
-import CreateVehicleDto from '../dto/create-vehicle.dto';
-import ListVehiclesQueryDto from '../dto/list-vehicles-query.dto';
-import VehicleController from '../vehicle.controller';
 import {
   VehicleOperationalStatusEnum,
   VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
+} from '@masr3/libs/vehicle';
+import CreateVehicleDto from '../dto/create-vehicle.dto';
+import ListVehiclesQueryDto from '../dto/list-vehicles-query.dto';
+import VehicleController from '../vehicle.controller';
 import VehicleService from '../vehicle.service';
 
 describe('VehicleController', () => {

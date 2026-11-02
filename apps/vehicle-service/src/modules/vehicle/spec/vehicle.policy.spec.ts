@@ -9,7 +9,7 @@ import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
 import {
   VehicleOperationalStatusEnum,
   VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
+} from '@masr3/libs/vehicle';
 import {
   assertOperationalTransition,
   assertVerificationTransition,

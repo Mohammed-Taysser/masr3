@@ -9,16 +9,16 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+import {
+  VehicleOperationalStatusEnum,
+  VehicleTypeEnum,
+  VehicleVerificationStatusEnum,
+} from '@masr3/libs/vehicle';
 import DriverEntity from '../../driver/entities/driver.entity';
 import {
   UQ_VEHICLES_DRIVER_DEFAULT,
   UQ_VEHICLES_PLATE_NUMBER,
 } from '../vehicle.constant';
-import {
-  VehicleOperationalStatusEnum,
-  VehicleTypeEnum,
-  VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
 
 @Entity('vehicles')
 @Index(['driverId'])

@@ -2,7 +2,7 @@ import type VehicleEntity from './entities/vehicle.entity';
 import {
   VehicleOperationalStatusEnum,
   VehicleVerificationStatusEnum,
-} from './vehicle.enum';
+} from '@masr3/libs/vehicle';
 
 const UQ_VEHICLES_PLATE_NUMBER = 'UQ_vehicles_plate_number';
 // At most one default vehicle per driver.

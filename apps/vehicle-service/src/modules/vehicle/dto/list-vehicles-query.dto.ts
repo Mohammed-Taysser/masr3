@@ -11,12 +11,12 @@ import {
 
 import { PaginationQueryDto } from '@masr3/libs/pagination';
 
-import { trim } from '../../../shared/transformers/text.transformer';
 import {
   VehicleOperationalStatusEnum,
   VehicleTypeEnum,
   VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
+} from '@masr3/libs/vehicle';
+import { trim } from '../../../shared/transformers/text.transformer';
 
 class ListVehiclesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({

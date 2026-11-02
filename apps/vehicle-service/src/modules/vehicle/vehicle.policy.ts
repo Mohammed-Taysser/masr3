@@ -6,15 +6,16 @@ import {
 
 import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
 
+import {
+  VehicleOperationalStatusEnum,
+  VehicleVerificationStatusEnum,
+} from '@masr3/libs/vehicle';
+
 import VehicleEntity from './entities/vehicle.entity';
 import {
   VEHICLE_OPERATIONAL_TRANSITIONS,
   VEHICLE_VERIFICATION_TRANSITIONS,
 } from './vehicle.constant';
-import {
-  VehicleOperationalStatusEnum,
-  VehicleVerificationStatusEnum,
-} from './vehicle.enum';
 
 type VehicleStatuses = Pick<
   VehicleEntity,

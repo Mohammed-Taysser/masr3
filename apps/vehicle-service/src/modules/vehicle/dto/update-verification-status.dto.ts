@@ -8,9 +8,9 @@ import {
   MaxLength,
 } from 'class-validator';
 
+import { VehicleVerificationStatusEnum } from '@masr3/libs/vehicle';
 import { trim } from '../../../shared/transformers/text.transformer';
 import { VEHICLE_STATUS_REASON_MAX_LENGTH } from '../vehicle.constant';
-import { VehicleVerificationStatusEnum } from '../vehicle.enum';
 
 class UpdateVerificationStatusDto {
   @ApiProperty({

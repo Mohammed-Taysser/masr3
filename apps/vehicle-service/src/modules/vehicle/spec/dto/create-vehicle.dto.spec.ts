@@ -5,7 +5,7 @@ import { dayjs } from '@masr3/libs/date';
 
 import CreateVehicleDto from '../../dto/create-vehicle.dto';
 import UpdateVehicleDto from '../../dto/update-vehicle.dto';
-import { VehicleTypeEnum } from '../../vehicle.enum';
+import { VehicleTypeEnum } from '@masr3/libs/vehicle';
 
 const valid = {
   type: VehicleTypeEnum.CAR,

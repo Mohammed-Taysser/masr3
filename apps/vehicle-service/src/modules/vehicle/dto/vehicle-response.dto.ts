@@ -5,7 +5,7 @@ import {
   VehicleOperationalStatusEnum,
   VehicleTypeEnum,
   VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
+} from '@masr3/libs/vehicle';
 import DriverSummaryResponseDto from './driver-summary-response.dto';
 
 class VehicleResponseDto {

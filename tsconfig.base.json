@@ -22,7 +22,8 @@
       "@masr3/libs/money": ["./libs/src/lib/money/index.ts"],
       "@masr3/libs/outbox": ["./libs/src/lib/outbox/index.ts"],
       "@masr3/libs/pagination": ["./libs/src/lib/pagination/index.ts"],
-      "@masr3/libs/timezone": ["./libs/src/lib/date/timezone.ts"]
+      "@masr3/libs/timezone": ["./libs/src/lib/date/timezone.ts"],
+      "@masr3/libs/vehicle": ["./libs/src/lib/vehicle/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

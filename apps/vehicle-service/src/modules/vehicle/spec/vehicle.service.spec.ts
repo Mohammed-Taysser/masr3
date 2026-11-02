@@ -16,6 +16,11 @@ import {
   buildUserAuditActor,
 } from '@masr3/libs/kafka';
 
+import {
+  VehicleOperationalStatusEnum,
+  VehicleTypeEnum,
+  VehicleVerificationStatusEnum,
+} from '@masr3/libs/vehicle';
 import AuditRecorderService from '../../audit/audit-recorder.service';
 import DriverService from '../../driver/driver.service';
 import CreateVehicleDto from '../dto/create-vehicle.dto';
@@ -25,11 +30,6 @@ import {
   UQ_VEHICLES_PLATE_NUMBER,
   VEHICLE_AUDITED_FIELDS,
 } from '../vehicle.constant';
-import {
-  VehicleOperationalStatusEnum,
-  VehicleTypeEnum,
-  VehicleVerificationStatusEnum,
-} from '../vehicle.enum';
 import VehicleService from '../vehicle.service';
 
 describe('VehicleService', () => {
