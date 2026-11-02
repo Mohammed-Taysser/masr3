@@ -1,6 +1,6 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
-import { Queue } from 'bullmq';
+import { JobsOptions, Queue } from 'bullmq';
 
 import NotificationDeliveryEntity from '../entities/notification-delivery.entity';
 import {
@@ -51,16 +51,20 @@ class DeliveryQueueService implements OnApplicationBootstrap {
     secrets?: NotificationSecrets,
   ): Promise<void> {
     const data: DeliveryJobData = { deliveryId: delivery.id, secrets };
+    const options: JobsOptions = {
+      jobId: DeliveryQueueService.jobId(delivery),
+      attempts: DELIVERY_ATTEMPTS,
+      backoff: { type: 'exponential', delay: DELIVERY_BACKOFF_MS },
+    };
+
+    if (secrets) {
+      options.removeOnComplete = true;
+    }
 
     await this.queueFor(delivery.channel).add(
       NotificationJobEnum.DELIVER,
       data,
-      {
-        jobId: DeliveryQueueService.jobId(delivery),
-        attempts: DELIVERY_ATTEMPTS,
-        backoff: { type: 'exponential', delay: DELIVERY_BACKOFF_MS },
-        ...(secrets && { removeOnComplete: true }),
-      },
+      options,
     );
   }
 

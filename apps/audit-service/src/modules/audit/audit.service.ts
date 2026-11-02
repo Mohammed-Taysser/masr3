@@ -82,16 +82,41 @@ class AuditService {
       query.occurredTo,
     );
 
-    return {
-      ...(query.service && { service: query.service }),
-      ...(query.action && { action: query.action }),
-      ...(query.entityType && { entityType: query.entityType }),
-      ...(query.entityId && { entityId: query.entityId }),
-      ...(query.actorType && { actorType: query.actorType }),
-      ...(query.actorId && { actorId: query.actorId }),
-      ...(query.actorRole && { actorRole: query.actorRole }),
-      ...(occurredAt && { occurredAt }),
-    };
+    const where: FindOptionsWhere<AuditEntity> = {};
+
+    if (query.service !== undefined) {
+      where.service = query.service;
+    }
+
+    if (query.action !== undefined) {
+      where.action = query.action;
+    }
+
+    if (query.entityType !== undefined) {
+      where.entityType = query.entityType;
+    }
+
+    if (query.entityId !== undefined) {
+      where.entityId = query.entityId;
+    }
+
+    if (query.actorType !== undefined) {
+      where.actorType = query.actorType;
+    }
+
+    if (query.actorId !== undefined) {
+      where.actorId = query.actorId;
+    }
+
+    if (query.actorRole !== undefined) {
+      where.actorRole = query.actorRole;
+    }
+
+    if (occurredAt) {
+      where.occurredAt = occurredAt;
+    }
+
+    return where;
   }
 
   private static occurredBetween(

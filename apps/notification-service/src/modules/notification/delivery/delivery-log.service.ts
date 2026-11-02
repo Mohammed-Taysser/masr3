@@ -78,11 +78,21 @@ class DeliveryLogService {
   private static prepareListWhere(
     query: ListDeliveriesQueryDto,
   ): FindOptionsWhere<NotificationDeliveryEntity> {
-    return {
-      ...(query.status && { status: query.status }),
-      ...(query.channel && { channel: query.channel }),
-      ...(query.userId && { notification: { userId: query.userId } }),
-    };
+    const where: FindOptionsWhere<NotificationDeliveryEntity> = {};
+
+    if (query.status !== undefined) {
+      where.status = query.status;
+    }
+
+    if (query.channel !== undefined) {
+      where.channel = query.channel;
+    }
+
+    if (query.userId !== undefined) {
+      where.notification = { userId: query.userId };
+    }
+
+    return where;
   }
 }
 

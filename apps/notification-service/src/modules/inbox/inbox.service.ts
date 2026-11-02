@@ -95,11 +95,18 @@ class InboxService {
     userId: number,
     query: ListInboxQueryDto,
   ): FindOptionsWhere<NotificationEntity> {
-    return {
-      ...InboxService.inboxOf(userId),
-      ...(query.unread && { readAt: IsNull() }),
-      ...(query.category && { category: query.category }),
-    };
+    const where = InboxService.inboxOf(userId);
+
+    // unread=false means every item, not only the read ones.
+    if (query.unread) {
+      where.readAt = IsNull();
+    }
+
+    if (query.category !== undefined) {
+      where.category = query.category;
+    }
+
+    return where;
   }
 
   private static inboxOf(userId: number): FindOptionsWhere<NotificationEntity> {
