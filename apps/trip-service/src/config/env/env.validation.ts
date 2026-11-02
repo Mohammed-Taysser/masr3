@@ -84,6 +84,10 @@ class EnvironmentVariables {
   @MinLength(1)
   KAFKA_CLIENT_ID: string;
 
+  @IsString()
+  @MinLength(1)
+  KAFKA_CONSUMER_GROUP_ID: string;
+
   @IsInt()
   @Min(1)
   OUTBOX_POLL_INTERVAL_MS: number;

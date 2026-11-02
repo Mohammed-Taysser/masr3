@@ -8,6 +8,7 @@ import AppConfigModule from './config/config.module';
 import DatabaseModule from './database/database.module';
 import HealthModule from './health/health.module';
 import { TRIP_OUTBOX_RELAY_QUEUE } from './kafka/kafka.constant';
+import KafkaModule from './kafka/kafka.module';
 import QueueModule from './queue/queue.module';
 import TripOfferModule from './modules/trip-offer/trip-offer.module';
 import TripModule from './modules/trip/trip.module';
@@ -21,6 +22,7 @@ import TripModule from './modules/trip/trip.module';
     AuthenticationModule.register(),
     TripModule,
     TripOfferModule,
+    KafkaModule,
     HealthModule,
   ],
   controllers: [],

@@ -5,8 +5,9 @@ proposes a fare, drivers accept it or counter-offer, and the customer picks one 
 
 - **Port** 7002, database `trip-db` (41002), Swagger at `http://localhost:7002/api/docs`.
 - **Owns:** trips, their status history, offers, and the outbox of trip and audit events.
-- **Does not own:** users (auth-service) or messages to people (notification-service). It knows
-  users only by id.
+- **Does not own:** users (auth-service) or messages to people (notification-service). It keeps
+  a copy of each CUSTOMER and DRIVER (`userId`, `role`, `isActive`) from `auth.user-changed`,
+  used only to check a user an admin names.
 
 ## Context
 
@@ -14,6 +15,7 @@ proposes a fare, drivers accept it or counter-offer, and the customer picks one 
 flowchart LR
   customer([Customer app]) -->|HTTP + access token| trip[trip-service :7002]
   driver([Driver app]) -->|HTTP + access token| trip
+  users{{auth.user-changed}} -->|group trip-service, from the beginning| trip
   trip -->|verify tokens locally| jwks[auth-service JWKS]
   trip -->|via pgbouncer :41500| db[(trip-db)]
   trip -->|BullMQ jobs| redis[(Redis :44000)]
@@ -64,6 +66,12 @@ erDiagram
     int driverId
     decimal amount
     enum status
+  }
+  users {
+    int id PK
+    int userId UK "auth-service user id"
+    enum role "CUSTOMER or DRIVER"
+    bool isActive
   }
   outbox_events {
     int id PK
@@ -288,6 +296,10 @@ failing events: `SELECT * FROM outbox_events WHERE "publishedAt" IS NULL ORDER B
 | ----------------------- | ------------------------------ | -------------------------------------------------------- | ---------------------------------- |
 | `trip.status-changed`   | `tripId`                       | `TripStatusChangedEvent` (`libs/src/lib/kafka/trip/`)    | notification-service (trip emails) |
 | `audit.action-recorded` | `TRIP-<id>`, `TRIP_OFFER-<id>` | `AuditActionRecordedEvent` (`libs/src/lib/kafka/audit/`) | audit-service                      |
+
+Consumed: `auth.user-changed` (group `trip-service`, from the beginning, `KafkaConsumerService`),
+applied by `UserService.applyUserChanged` as an upsert or delete. ADMIN users and deleted users
+are not kept. Malformed messages are skipped (`UserChangedEventDto`).
 
 - **One topic for every status change.** Kafka orders messages only within a partition, so
   per-status topics could deliver "cancelled" before "accepted". Consumers filter on

@@ -266,7 +266,8 @@ it carries the raw reset token.
 
 `auth.user-changed` carries the user's whole state (`userId`, `firstName`, `lastName`, `role`,
 `isActive`) and the `change` (`CREATED`, `UPDATED`, `DELETED`), never a diff, so a consumer that
-keeps a copy only overwrites or deletes its row. vehicle-service keeps its drivers this way.
+keeps a copy only overwrites or deletes its row. vehicle-service keeps its drivers this way, and
+trip-service its customers and drivers.
 Users written before the topic existed are published once with
 `npx nx run auth-service:users:publish-snapshots`.
 

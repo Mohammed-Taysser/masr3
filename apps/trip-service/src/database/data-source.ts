@@ -7,6 +7,7 @@ import { OutboxEventEntity } from '@masr3/libs/outbox';
 import TripOfferEntity from '../modules/trip-offer/entities/trip-offer.entity';
 import TripStatusHistoryEntity from '../modules/trip/entities/trip-status-history.entity';
 import TripEntity from '../modules/trip/entities/trip.entity';
+import UserEntity from '../modules/user/entities/user.entity';
 
 dotenv.config({
   path: path.join(process.cwd(), 'apps/trip-service/.env'),
@@ -27,6 +28,7 @@ const dataSource = new DataSource({
     TripStatusHistoryEntity,
     TripOfferEntity,
     OutboxEventEntity,
+    UserEntity,
   ],
   migrations: [path.join(__dirname, 'migrations/*.ts')],
   synchronize: false,

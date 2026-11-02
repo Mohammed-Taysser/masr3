@@ -66,7 +66,7 @@ default.
 | 41500 | pgbouncer      | `pgbouncer`=41500                                                                               |
 | 42000 | Messaging      | `kafka` (host listener)=42000, `kafka-ui`=42001                                                 |
 | 43000 | DB / infra UI  | `pgadmin`=43000                                                                                 |
-| 44000 | Queues         | `redis`=44000, `bull-board`=44001, `redis-insight`=44002                                         |
+| 44000 | Queues         | `redis`=44000, `bull-board`=44001, `redis-insight`=44002                                        |
 | 45000 | Dev-only tools | `mailhog` SMTP=45000, web UI=45001                                                              |
 
 - A UI sits next to the thing it shows: kafka 42000 → kafka-ui 42001, redis 44000 → bull-board 44001
@@ -128,6 +128,7 @@ flowchart LR
   rr -->|group notification-service| ns
   auth -->|transactional outbox| uc{{auth.user-changed}}
   uc -->|group vehicle-service, from the beginning| vs[vehicle-service]
+  uc -->|group trip-service, from the beginning| trip
   trip[trip-service] -->|transactional outbox| tt{{trip.status-changed}}
   tt -->|same group, from the latest offset| ns
   auth -->|transactional outbox| aa{{audit.action-recorded}}
@@ -137,7 +138,7 @@ flowchart LR
 ```
 
 - **One consumer group per consuming service** (`KAFKA_CONSUMER_GROUP_ID`): notification-service,
-  audit-service and vehicle-service each get every message of the topics they read.
+  audit-service, vehicle-service and trip-service each get every message of the topics they read.
   notification-service does not subscribe to `auth.user-changed`. Instances of one service
   share its group and split the partitions.
 

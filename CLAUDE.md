@@ -4,13 +4,13 @@ masr3 (Arabic **مُسْرِع**, "fast"; use that spelling in Arabic localizati
 Nx monorepo of NestJS microservices plus a shared `libs` project. Package manager: **pnpm**.
 Docker runs only the infrastructure. The apps run on the host through Nx.
 
-| Service                | Port | Database (host port)      | Role                                                                |
-| ---------------------- | ---- | ------------------------- | ------------------------------------------------------------------- |
-| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*`      |
-| `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences           |
-| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding                              |
-| `audit-service`        | 7003 | `audit-db` (41003)        | Audit trail of every service; consumes `audit.action-recorded`      |
-| `vehicle-service`      | 7004 | `vehicle-db` (41004)      | Drivers' vehicles; keeps a copy of drivers from `auth.user-changed` |
+| Service                | Port | Database (host port)      | Role                                                                        |
+| ---------------------- | ---- | ------------------------- | --------------------------------------------------------------------------- |
+| `auth-service`         | 7000 | `auth-db` (41000)         | Users, JWT, roles CUSTOMER / DRIVER / ADMIN; produces `auth.*`              |
+| `notification-service` | 7001 | `notification-db` (41001) | Notifications on every channel, in-app inbox, preferences                   |
+| `trip-service`         | 7002 | `trip-db` (41002)         | Trips (RIDE / PARCEL), inDrive bidding; users copy from `auth.user-changed` |
+| `audit-service`        | 7003 | `audit-db` (41003)        | Audit trail of every service; consumes `audit.action-recorded`              |
+| `vehicle-service`      | 7004 | `vehicle-db` (41004)      | Drivers' vehicles; keeps a copy of drivers from `auth.user-changed`         |
 
 All apps reach Postgres through pgbouncer (`localhost:41500`) and Kafka at `localhost:42000`;
 auth-service, trip-service, vehicle-service and notification-service also use Redis

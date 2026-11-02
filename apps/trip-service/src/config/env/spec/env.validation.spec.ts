@@ -23,6 +23,7 @@ const validEnv = {
 
   KAFKA_BROKER: 'localhost:42000',
   KAFKA_CLIENT_ID: 'trip-service',
+  KAFKA_CONSUMER_GROUP_ID: 'trip-service',
 
   OUTBOX_POLL_INTERVAL_MS: '1000',
   OUTBOX_BATCH_SIZE: '100',
@@ -78,6 +79,7 @@ describe('validate', () => {
       'REDIS_HOST',
       'KAFKA_BROKER',
       'KAFKA_CLIENT_ID',
+      'KAFKA_CONSUMER_GROUP_ID',
     ])('rejects an empty %s', (property) => {
       expect(() => validate({ ...validEnv, [property]: '' })).toThrow();
     });
