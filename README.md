@@ -85,13 +85,14 @@ Each service doc has its data model, its flows as diagrams, its events and a **P
 
 ## Guides
 
-| Guide                                                         | Covers                                                    |
-| ------------------------------------------------------------- | --------------------------------------------------------- |
-| [Infrastructure](docs/infrastructure.md)                      | the Docker stack, ports, pgbouncer, Kafka, Redis, ops     |
-| [Adding a service](docs/adding-a-service.md)                  | step by step, with a checklist                            |
-| [Authentication](docs/authentication.md)                      | token types, protecting routes, calling services, keys    |
-| [Swagger UI and Postman](docs/swagger-and-postman.md)         | authorizing in Swagger UI, generating Postman collections |
-| [Transactional outbox](docs/patterns/transactional-outbox.md) | publishing events that must not be lost                   |
+| Guide                                                              | Covers                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| [Infrastructure](docs/infrastructure.md)                           | the Docker stack, ports, pgbouncer, Kafka, Redis, ops      |
+| [Adding a service](docs/adding-a-service.md)                       | step by step, with a checklist                             |
+| [Authentication](docs/authentication.md)                           | token types, protecting routes, calling services, keys     |
+| [Swagger UI and Postman](docs/swagger-and-postman.md)              | authorizing in Swagger UI, generating Postman collections  |
+| [Transactional outbox](docs/patterns/transactional-outbox.md)      | publishing events that must not be lost                    |
+| [Reliable messaging patterns](docs/patterns/reliable-messaging.md) | the outbox's siblings: consumers, ordering, sagas, retries |
 
 ## Getting started
 

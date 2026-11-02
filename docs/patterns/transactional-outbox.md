@@ -6,6 +6,9 @@ in libs (`libs/src/lib/outbox/`): `OutboxModule`, `OutboxService`, the relay and
 with events that matter can, and **every service that produces audit events must** (see
 [audit-service](../services/audit-service.md)).
 
+The related patterns (idempotent consumers, ordering, dead-letter topics, sagas, idempotency keys)
+are compared in [Reliable messaging patterns](reliable-messaging.md).
+
 ## The problem: a dual write
 
 A state change that also publishes an event writes to two systems, Postgres and Kafka. They share
