@@ -2,26 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
-  AuthEventMap,
   AuthKafkaTopic,
   BaseKafkaConsumer,
   KafkaSubscription,
   KafkaTopicHandlers,
-  TripEventMap,
   TripKafkaTopic,
 } from '@masr3/libs/kafka';
 
 import AuthEventsHandler from '../modules/events/auth-events.handler';
 import TripEventsHandler from '../modules/events/trip-events.handler';
 import NotifierService from '../modules/notification/notifier.service';
-import {
-  CONSUMED_AUTH_TOPICS,
-  CONSUMED_EVENT_DTOS,
-  ConsumedAuthKafkaTopic,
-} from './kafka.constant';
-
-type ConsumedEventMap = Pick<AuthEventMap, ConsumedAuthKafkaTopic> &
-  TripEventMap;
+import { CONSUMED_AUTH_TOPICS, CONSUMED_EVENT_DTOS } from './kafka.constant';
+import { ConsumedEventMap } from './kafka.interface';
 
 @Injectable()
 class KafkaConsumerService extends BaseKafkaConsumer<ConsumedEventMap> {

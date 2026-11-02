@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
-  AuthEventMap,
   AuthKafkaTopic,
   BaseKafkaConsumer,
   KafkaSubscription,
@@ -10,9 +9,8 @@ import {
 } from '@masr3/libs/kafka';
 
 import DriverService from '../modules/driver/driver.service';
-import { CONSUMED_EVENT_DTOS, ConsumedKafkaTopic } from './kafka.constant';
-
-type ConsumedEventMap = Pick<AuthEventMap, ConsumedKafkaTopic>;
+import { CONSUMED_EVENT_DTOS } from './kafka.constant';
+import { ConsumedEventMap } from './kafka.interface';
 
 @Injectable()
 class KafkaConsumerService extends BaseKafkaConsumer<ConsumedEventMap> {

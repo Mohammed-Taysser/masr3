@@ -18,6 +18,20 @@ class DriverService {
     private readonly driverRepository: Repository<DriverEntity>,
   ) {}
 
+  async findActiveOrFail(userId: number): Promise<DriverEntity> {
+    const driver = await this.driverRepository.findOneBy({ userId });
+
+    if (!driver) {
+      throw new NotFoundException(`Driver ${userId} not found`);
+    }
+
+    if (!driver.isActive) {
+      throw new ConflictException(`Driver ${userId} is deactivated`);
+    }
+
+    return driver;
+  }
+
   // Each event is the user's whole state, and auth-service's outbox keys them
   // by userId, so they arrive in order: overwriting (or deleting) the row is
   // enough, and replaying an event leaves the same row.
@@ -41,20 +55,6 @@ class DriverService {
       },
       { conflictPaths: ['userId'] },
     );
-  }
-
-  async findActiveOrFail(userId: number): Promise<DriverEntity> {
-    const driver = await this.driverRepository.findOneBy({ userId });
-
-    if (!driver) {
-      throw new NotFoundException(`Driver ${userId} not found`);
-    }
-
-    if (!driver.isActive) {
-      throw new ConflictException(`Driver ${userId} is deactivated`);
-    }
-
-    return driver;
   }
 }
 
