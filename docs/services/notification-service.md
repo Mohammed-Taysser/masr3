@@ -234,7 +234,7 @@ footers/<category>.<locale>.hbs
 | `GET /notifications/me/preferences`                            | any user | one switch per channel                                    |
 | `PUT /notifications/me/preferences`                            | any user | change some switches                                      |
 | `GET /admin/notifications/deliveries?status=&channel=&userId=` | ADMIN    | the delivery log; `status=FAILED` is the dead-letter view |
-| `POST /admin/notifications/deliveries/:id/retry`               | ADMIN    | re-queue a FAILED delivery                                |
+| `POST /admin/notifications/deliveries/:id/retry`               | ADMIN    | re-queue a FAILED delivery (`notification.policy.ts`)     |
 
 Someone else's item answers `404`. Security notifications ignore the switches.
 

@@ -33,17 +33,6 @@ class PreferencesService {
     };
   }
 
-  async disabledChannels(
-    userId: number,
-  ): Promise<Set<NotificationChannelEnum>> {
-    const preferences = await this.find(userId);
-    const channels = Object.entries(CHANNEL_SWITCHES)
-      .filter(([, column]) => !preferences[column])
-      .map(([channel]) => channel as NotificationChannelEnum);
-
-    return new Set(channels);
-  }
-
   async update(
     userId: number,
     changes: Partial<ChannelPreferences>,
@@ -59,6 +48,17 @@ class PreferencesService {
       .execute();
 
     return preferences;
+  }
+
+  async disabledChannels(
+    userId: number,
+  ): Promise<Set<NotificationChannelEnum>> {
+    const preferences = await this.find(userId);
+    const channels = Object.entries(CHANNEL_SWITCHES)
+      .filter(([, column]) => !preferences[column])
+      .map(([channel]) => channel as NotificationChannelEnum);
+
+    return new Set(channels);
   }
 }
 

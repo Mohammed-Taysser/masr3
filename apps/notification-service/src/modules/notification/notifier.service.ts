@@ -175,7 +175,9 @@ class NotifierService {
       await this.deliveryService.preview(
         delivery,
         notification,
-        secrets && NotifierService.mask(secrets),
+        // The preview is logged, so secrets show as *** there.
+        secrets &&
+          Object.fromEntries(Object.keys(secrets).map((key) => [key, '***'])),
       );
     }
   }
@@ -195,10 +197,6 @@ class NotifierService {
       case NotificationChannelEnum.IN_APP:
         return String(recipient.userId);
     }
-  }
-
-  private static mask(secrets: NotificationSecrets): NotificationSecrets {
-    return Object.fromEntries(Object.keys(secrets).map((key) => [key, '***']));
   }
 }
 

@@ -12,6 +12,7 @@ import ListDeliveriesQueryDto from '../dto/list-deliveries-query.dto';
 import NotificationDeliveryEntity from '../entities/notification-delivery.entity';
 import { NOTIFICATION_CATALOG } from '../notification.constant';
 import { DeliveryStatusEnum } from '../notification.enum';
+import { assertDeliveryRetryable } from '../notification.policy';
 import DeliveryQueueService from './delivery-queue.service';
 
 @Injectable()
@@ -45,11 +46,7 @@ class DeliveryLogService {
       throw new NotFoundException(`Delivery ${id} not found`);
     }
 
-    if (delivery.status !== DeliveryStatusEnum.FAILED) {
-      throw new ConflictException(
-        `Only a FAILED delivery can be retried; this one is ${delivery.status}`,
-      );
-    }
+    assertDeliveryRetryable(delivery);
 
     await this.deliveryRepository.update(id, {
       status: DeliveryStatusEnum.QUEUED,
