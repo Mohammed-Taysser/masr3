@@ -252,6 +252,7 @@ Someone else's item answers `404`. Security notifications ignore the switches.
 | `trip.status-changed` → ACCEPTED | TRIP_CONFIRMED to the customer, TRIP_ASSIGNED to the driver      |
 | → COMPLETED                      | TRIP_RECEIPT to the customer                                     |
 | → CANCELLED after acceptance     | TRIP_CANCELLED to the other party (both when an admin cancelled) |
+| → CANCELLED by an admin, earlier | TRIP_CANCELLED to the customer                                   |
 | → EXPIRED                        | TRIP_EXPIRED to the customer                                     |
 
 `auth.user-changed` is not subscribed: it is for services that keep a copy of users

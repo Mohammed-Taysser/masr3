@@ -158,12 +158,31 @@ describe('TripEventsHandler', () => {
       },
     );
 
-    it('before any driver accepted sends nothing', async () => {
+    it('by the customer before any driver accepted sends nothing', async () => {
       await expect(
         handler.handleStatusChanged(
           cancelled(TripActorEnum.CUSTOMER, TripStatusEnum.REQUESTED),
         ),
       ).resolves.toEqual([]);
+    });
+
+    it('by an admin before any driver accepted tells the customer', async () => {
+      const intents = await handler.handleStatusChanged({
+        ...cancelled(TripActorEnum.ADMIN, TripStatusEnum.REQUESTED),
+        driverId: null,
+      });
+
+      expect(intents).toEqual([
+        expect.objectContaining({
+          type: NotificationTypeEnum.TRIP_CANCELLED,
+          userId: 1,
+          data: {
+            ...route,
+            cancelledBy: TripCancelledByEnum.SUPPORT,
+            reason: 'Changed plans',
+          },
+        }),
+      ]);
     });
   });
 

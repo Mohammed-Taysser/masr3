@@ -106,8 +106,20 @@ class TripEventsHandler {
     ];
   }
 
-  // Only a trip that had a driver on the way is worth telling the other party
-  // about; whoever cancelled already knows.
+  private async contacts(
+    event: TripStatusChangedEvent,
+  ): Promise<[UserContact | null, UserContact | null]> {
+    return Promise.all([
+      this.authServiceClient.getUserContact(event.customerId),
+      event.driverId === null
+        ? null
+        : this.authServiceClient.getUserContact(event.driverId),
+    ]);
+  }
+
+  // Whoever cancelled already knows. The other party is told when a driver
+  // was on the way; when an admin cancelled, the customer is told even if no
+  // driver had been found yet.
   private static cancelled(
     event: TripStatusChangedEvent,
   ): NotificationIntent[] {
@@ -115,7 +127,7 @@ class TripEventsHandler {
       event.fromStatus !== null &&
       TRIP_UNDER_WAY_STATUSES.includes(event.fromStatus);
 
-    if (!wasUnderWay) {
+    if (!wasUnderWay && event.actor !== TripActorEnum.ADMIN) {
       return [];
     }
 
@@ -136,17 +148,6 @@ class TripEventsHandler {
         },
       ),
     );
-  }
-
-  private async contacts(
-    event: TripStatusChangedEvent,
-  ): Promise<[UserContact | null, UserContact | null]> {
-    return Promise.all([
-      this.authServiceClient.getUserContact(event.customerId),
-      event.driverId === null
-        ? null
-        : this.authServiceClient.getUserContact(event.driverId),
-    ]);
   }
 
   private static route(event: TripStatusChangedEvent) {
