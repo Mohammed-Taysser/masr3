@@ -71,6 +71,7 @@ describe('UsersController', () => {
       update: jest.fn(),
       setActive: jest.fn(),
       remove: jest.fn(),
+      logout: jest.fn(),
     } as unknown as jest.Mocked<UsersService>;
 
     controller = new UsersController(usersService);
@@ -243,26 +244,29 @@ describe('UsersController', () => {
       ]);
     });
 
-    it('opens findAll to every role', () => {
-      const roles: UserRoleEnum[] = Reflect.getMetadata(
-        ROLES_KEY,
-        UsersController.prototype.findAll,
-      );
-
-      // order is irrelevant, coverage is not
-      expect([...roles].sort()).toEqual(Object.values(UserRoleEnum).sort());
-    });
-
     it.each([
+      'findAll',
       'findById',
       'create',
       'update',
       'updateStatus',
+      'logout',
       'remove',
     ] as const)('leaves %s on the admin-only default', (method) => {
       expect(
         Reflect.getMetadata(ROLES_KEY, UsersController.prototype[method]),
       ).toBeUndefined();
+    });
+  });
+
+  describe('logout', () => {
+    it('logs the user out everywhere, audited as the admin', async () => {
+      usersService.logout.mockResolvedValue(undefined);
+
+      const result = await controller.logout(5, admin);
+
+      expect(usersService.logout).toHaveBeenCalledWith(5, adminActor);
+      expect(result).toBeUndefined();
     });
   });
 

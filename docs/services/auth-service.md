@@ -243,6 +243,7 @@ from `@masr3/libs`. The guard fetches `GET /api/.well-known/jwks.json` once, cac
 | `POST /auth/forgot-password`, `/reset-password`                             | public                              |
 | `GET /auth/me`, `POST /auth/change-password`, `/logout`                     | any signed-in user                  |
 | `GET/POST /users`, `GET/PATCH/DELETE /users/:id`, `PATCH /users/:id/status` | ADMIN                               |
+| `POST /users/:id/logout` (log a user out everywhere)                        | ADMIN                               |
 | `POST /service-tokens`                                                      | service client (Basic)              |
 | `GET /internal/users/:id/contact`                                           | service token, `USERS_CONTACT_READ` |
 | `GET /.well-known/jwks.json`, `GET /health`                                 | public                              |

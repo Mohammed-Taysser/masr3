@@ -46,7 +46,6 @@ class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(UserRoleEnum.ADMIN, UserRoleEnum.CUSTOMER, UserRoleEnum.DRIVER)
   @SerializeOptions({ type: PaginatedUsersResponseDto })
   @ApiOperation({
     summary: 'List users',
@@ -145,6 +144,29 @@ class UsersController {
       dto.isActive,
       buildUserAuditActor(admin),
     );
+  }
+
+  @Post(':id/logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Log a user out everywhere',
+    description:
+      "Bumps the user's token version: every refresh token stops working, access tokens at once on auth-service and on other services within 5 minutes.",
+  })
+  @ApiParam({
+    name: 'id',
+    type: Number,
+    example: 2,
+    description: 'Id of the user to log out.',
+  })
+  @ApiNoContentResponse({
+    description: 'Logged out.',
+  })
+  async logout(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() admin: AuthenticatedUser,
+  ): Promise<void> {
+    await this.usersService.logout(id, buildUserAuditActor(admin));
   }
 
   @Delete(':id')
