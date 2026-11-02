@@ -906,26 +906,6 @@ describe('UsersService', () => {
     });
   });
 
-  describe('findByEmailOrFail', () => {
-    it('returns the user when found', async () => {
-      repository.findOneBy.mockResolvedValue(user);
-
-      const result = await service.findByEmailOrFail(user.email);
-
-      expect(result).toBe(user);
-    });
-
-    it('throws NotFoundException when user does not exist', async () => {
-      repository.findOneBy.mockResolvedValue(null);
-
-      await expect(
-        service.findByEmailOrFail('missing@example.com'),
-      ).rejects.toThrow(
-        new NotFoundException('User with email missing@example.com not found'),
-      );
-    });
-  });
-
   describe('findById', () => {
     it('returns the user when found', async () => {
       repository.findOne.mockResolvedValue(user);
@@ -1050,27 +1030,6 @@ describe('UsersService', () => {
 
       expect(queryBuilder.getOne).toHaveBeenCalled();
       expect(result).toBeNull();
-    });
-  });
-
-  describe('clearPasswordResetToken', () => {
-    it('clears the reset token hash and expiry', async () => {
-      repository.update.mockResolvedValue({ affected: 1 } as never);
-
-      await service.clearPasswordResetToken(1);
-
-      expect(repository.update).toHaveBeenCalledWith(
-        { id: 1 },
-        { passwordResetTokenHash: null, passwordResetExpiresAt: null },
-      );
-    });
-
-    it('throws NotFoundException when user does not exist', async () => {
-      repository.update.mockResolvedValue({ affected: 0 } as never);
-
-      await expect(service.clearPasswordResetToken(999)).rejects.toThrow(
-        new NotFoundException('User with ID 999 not found'),
-      );
     });
   });
 

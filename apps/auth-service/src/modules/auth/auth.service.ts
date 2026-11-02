@@ -134,19 +134,17 @@ class AuthService {
       };
     }
 
-    const { token, tokenHash } = this.tokenService.createResetToken();
-
-    const expiresAt = this.tokenService.getResetTokenExpiry();
+    const resetToken = this.tokenService.createResetToken();
 
     await this.usersService.setPasswordResetToken(user.id, {
-      tokenHash,
-      expiresAt,
+      tokenHash: resetToken.tokenHash,
+      expiresAt: resetToken.expiresAt,
     });
 
     await this.kafkaPublisher.publish(AuthKafkaTopic.PASSWORD_RESET_REQUESTED, {
       ...buildAuthEvent(user),
-      resetToken: token,
-      expiresAt: expiresAt.toISOString(),
+      resetToken: resetToken.token,
+      expiresAt: resetToken.expiresAt.toISOString(),
     });
 
     return {
@@ -178,10 +176,6 @@ class AuthService {
     return {
       message: 'Password changed successfully',
     };
-  }
-
-  async me(userId: number) {
-    return this.usersService.findByIdOrFail(userId);
   }
 
   async logout(userId: number) {

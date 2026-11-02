@@ -54,16 +54,6 @@ class UsersService {
     private readonly outboxService: OutboxService<OutboxEventMap>,
   ) {}
 
-  async findAll(query: ListUsersQueryDto): Promise<Paginated<UserEntity>> {
-    const [items, total] = await this.userRepository.findAndCount({
-      where: this.prepareListWhere(query),
-      order: { [query.sortBy]: query.sortOrder, id: query.sortOrder },
-      ...paginationWindow(query),
-    });
-
-    return paginate(items, total, query);
-  }
-
   // An admin creating an account.
   async create(dto: CreateUserDto, actor: AuditActor): Promise<UserEntity> {
     return this.insert(dto, AuditActionEnum.CREATED, () => actor, null);
@@ -77,6 +67,60 @@ class UsersService {
       buildUserAuditActor,
       AuthKafkaTopic.USER_REGISTER,
     );
+  }
+
+  async findAll(query: ListUsersQueryDto): Promise<Paginated<UserEntity>> {
+    const [items, total] = await this.userRepository.findAndCount({
+      where: UsersService.prepareListWhere(query),
+      order: { [query.sortBy]: query.sortOrder, id: query.sortOrder },
+      ...paginationWindow(query),
+    });
+
+    return paginate(items, total, query);
+  }
+
+  async findById(id: number): Promise<UserEntity | null> {
+    return this.userRepository.findOne({ where: { id } });
+  }
+
+  async findByIdOrFail(id: number): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (!user) throw new NotFoundException(`User with ID ${id} not found`);
+    return user;
+  }
+
+  async findByEmail(email: string): Promise<UserEntity | null> {
+    return this.userRepository.findOneBy({ email });
+  }
+
+  async findByIdWithPassword(id: number): Promise<UserEntity> {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        role: true,
+        tokenVersion: true,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return user;
+  }
+
+  async findByValidResetToken(tokenHash: string): Promise<UserEntity | null> {
+    return this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordResetTokenHash')
+      .addSelect('user.passwordResetExpiresAt')
+      .where('user.passwordResetTokenHash = :tokenHash', { tokenHash })
+      .andWhere('user.passwordResetExpiresAt > CURRENT_TIMESTAMP')
+      .getOne();
   }
 
   async update(id: number, dto: UpdateUserDto, actor: AuditActor) {
@@ -102,61 +146,6 @@ class UsersService {
         .setParameter('role', dto.role)
         .execute(),
     );
-  }
-
-  async recordLogin(user: UserEntity): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await this.auditRecorder.record(manager, {
-        action: AuditActionEnum.LOGGED_IN,
-        entity: { type: AuditEntityTypeEnum.USER, id: user.id },
-        actor: buildUserAuditActor(user),
-        changes: null,
-        metadata: null,
-      });
-
-      await this.publishAuthEvent(manager, user, AuthKafkaTopic.USER_LOGGED_IN);
-    });
-  }
-
-  async findByEmail(email: string): Promise<UserEntity | null> {
-    return this.userRepository.findOneBy({ email });
-  }
-
-  async findByEmailOrFail(email: string): Promise<UserEntity> {
-    const user = await this.findByEmail(email);
-    if (!user)
-      throw new NotFoundException(`User with email ${email} not found`);
-    return user;
-  }
-
-  async findById(id: number): Promise<UserEntity | null> {
-    return this.userRepository.findOne({ where: { id } });
-  }
-
-  async findByIdOrFail(id: number): Promise<UserEntity> {
-    const user = await this.findById(id);
-    if (!user) throw new NotFoundException(`User with ID ${id} not found`);
-    return user;
-  }
-
-  async findByIdWithPassword(id: number): Promise<UserEntity> {
-    const user = await this.userRepository.findOne({
-      where: { id },
-      select: {
-        id: true,
-        email: true,
-        password: true,
-        role: true,
-        tokenVersion: true,
-        isActive: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
-
-    return user;
   }
 
   async remove(id: number, actor: AuditActor): Promise<UserEntity> {
@@ -211,6 +200,20 @@ class UsersService {
     );
   }
 
+  async recordLogin(user: UserEntity): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditRecorder.record(manager, {
+        action: AuditActionEnum.LOGGED_IN,
+        entity: { type: AuditEntityTypeEnum.USER, id: user.id },
+        actor: buildUserAuditActor(user),
+        changes: null,
+        metadata: null,
+      });
+
+      await this.publishAuthEvent(manager, user, AuthKafkaTopic.USER_LOGGED_IN);
+    });
+  }
+
   // Anyone can ask for a reset by email, so nobody is signed in as the actor.
   async setPasswordResetToken(
     id: number,
@@ -233,27 +236,6 @@ class UsersService {
         ),
       { metadata: { expiresAt: dayjs(expiresAt).toISOString() } },
     );
-  }
-
-  async findByValidResetToken(tokenHash: string): Promise<UserEntity | null> {
-    return this.userRepository
-      .createQueryBuilder('user')
-      .addSelect('user.passwordResetTokenHash')
-      .addSelect('user.passwordResetExpiresAt')
-      .where('user.passwordResetTokenHash = :tokenHash', { tokenHash })
-      .andWhere('user.passwordResetExpiresAt > CURRENT_TIMESTAMP')
-      .getOne();
-  }
-
-  async clearPasswordResetToken(id: number): Promise<void> {
-    const result = await this.userRepository.update(
-      { id },
-      { passwordResetTokenHash: null, passwordResetExpiresAt: null },
-    );
-
-    if (result.affected === 0) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
   }
 
   async resetPassword(
@@ -400,42 +382,24 @@ class UsersService {
     );
   }
 
-  private static async lockOrFail(
-    manager: EntityManager,
-    id: number,
-  ): Promise<UserEntity> {
-    const user = await manager.findOne(UserEntity, {
-      where: { id },
-      lock: { mode: 'pessimistic_write' },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
-
-    return user;
-  }
-
-  private prepareListWhere(
+  private static prepareListWhere(
     query: ListUsersQueryDto,
   ): FindOptionsWhere<UserEntity>[] {
-    const { search, role, isActive } = query;
-
     const baseWhere: FindOptionsWhere<UserEntity> = {};
 
-    if (role !== undefined) {
-      baseWhere.role = role;
+    if (query.role !== undefined) {
+      baseWhere.role = query.role;
     }
 
-    if (isActive !== undefined) {
-      baseWhere.isActive = isActive;
+    if (query.isActive !== undefined) {
+      baseWhere.isActive = query.isActive;
     }
 
-    if (!search) {
+    if (!query.search) {
       return [baseWhere];
     }
 
-    const searchPattern = `%${search.trim()}%`;
+    const searchPattern = `%${query.search.trim()}%`;
 
     return [
       {
@@ -451,6 +415,22 @@ class UsersService {
         email: ILike(searchPattern),
       },
     ];
+  }
+
+  private static async lockOrFail(
+    manager: EntityManager,
+    id: number,
+  ): Promise<UserEntity> {
+    const user = await manager.findOne(UserEntity, {
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return user;
   }
 }
 

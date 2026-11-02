@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Req,
   SerializeOptions,
 } from '@nestjs/common';
 import {
@@ -16,9 +15,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
 
-import { Public } from '@masr3/libs/auth';
+import { AuthenticatedUser, CurrentUser, Public } from '@masr3/libs/auth';
 
 import AuthService from './auth.service';
 import AccessTokenResponseDto from './dto/access-token-response.dto';
@@ -30,11 +28,15 @@ import RefreshTokenDto from './dto/refresh-token.dto';
 import RegisterDto from './dto/register.dto';
 import ResetPasswordDto from './dto/reset-password.dto';
 import UserResponseDto from '../users/dto/user-response.dto';
+import UsersService from '../users/users.service';
 
 @ApiTags('Auth')
 @Controller('auth')
 class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Post('register')
   @Public()
@@ -135,10 +137,11 @@ class AuthController {
   @ApiOkResponse({
     description: 'Password changed successfully.',
   })
-  changePassword(@Req() request: Request, @Body() dto: ChangePasswordDto) {
-    const userId = request.user.id;
-
-    return this.authService.changePassword(userId, dto);
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.id, dto);
   }
 
   @Get('me')
@@ -150,8 +153,8 @@ class AuthController {
   @ApiOkResponse({
     description: 'Authenticated user returned.',
   })
-  me(@Req() request: Request): Promise<UserResponseDto> {
-    return this.authService.me(request.user.id);
+  me(@CurrentUser() user: AuthenticatedUser): Promise<UserResponseDto> {
+    return this.usersService.findByIdOrFail(user.id);
   }
 
   @Post('logout')
@@ -165,8 +168,8 @@ class AuthController {
   @ApiOkResponse({
     description: 'Logged out successfully.',
   })
-  logout(@Req() request: Request) {
-    return this.authService.logout(request.user.id);
+  logout(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.logout(user.id);
   }
 }
 

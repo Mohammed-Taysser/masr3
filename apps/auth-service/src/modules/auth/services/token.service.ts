@@ -58,20 +58,21 @@ class TokenService {
     );
   }
 
-  createResetToken(): { token: string; tokenHash: string } {
+  // The raw token goes to the user only; the database keeps its hash.
+  createResetToken(): { token: string; tokenHash: string; expiresAt: Date } {
     const token = randomBytes(32).toString('hex');
 
-    return { token, tokenHash: this.hashToken(token) };
+    return {
+      token,
+      tokenHash: this.hashToken(token),
+      expiresAt: dayjs()
+        .add(this.PASSWORD_RESET_TOKEN_TTL_MS, 'millisecond')
+        .toDate(),
+    };
   }
 
   hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
-  }
-
-  getResetTokenExpiry(): Date {
-    return dayjs()
-      .add(this.PASSWORD_RESET_TOKEN_TTL_MS, 'millisecond')
-      .toDate();
   }
 }
 

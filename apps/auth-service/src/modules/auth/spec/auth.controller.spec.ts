@@ -1,5 +1,3 @@
-import { Request } from 'express';
-
 import AuthController from '../auth.controller';
 import AuthService from '../auth.service';
 
@@ -10,11 +8,13 @@ import ForgotPasswordDto from '../dto/forgot-password.dto';
 import ResetPasswordDto from '../dto/reset-password.dto';
 import ChangePasswordDto from '../dto/change-password.dto';
 import UserEntity from '../../users/entities/user.entity';
-import { UserRoleEnum } from '@masr3/libs/auth';
+import UsersService from '../../users/users.service';
+import { AuthenticatedUser, UserRoleEnum } from '@masr3/libs/auth';
 
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: jest.Mocked<AuthService>;
+  let usersService: jest.Mocked<UsersService>;
 
   const authResponse = {
     accessToken: 'access-token',
@@ -40,11 +40,14 @@ describe('AuthController', () => {
       forgetPassword: jest.fn(),
       resetPassword: jest.fn(),
       changePassword: jest.fn(),
-      me: jest.fn(),
       logout: jest.fn(),
     } as unknown as jest.Mocked<AuthService>;
 
-    controller = new AuthController(authService);
+    usersService = {
+      findByIdOrFail: jest.fn(),
+    } as unknown as jest.Mocked<UsersService>;
+
+    controller = new AuthController(authService, usersService);
   });
 
   afterEach(() => {
@@ -156,13 +159,9 @@ describe('AuthController', () => {
 
       authService.changePassword.mockResolvedValue(response);
 
-      const request = {
-        user: {
-          id: userId,
-        },
-      } as unknown as Request;
+      const caller = { id: userId } as AuthenticatedUser;
 
-      const result = await controller.changePassword(request, dto);
+      const result = await controller.changePassword(caller, dto);
 
       expect(authService.changePassword).toHaveBeenCalledWith(userId, dto);
 
@@ -171,7 +170,7 @@ describe('AuthController', () => {
   });
 
   describe('me', () => {
-    it('passes the authenticated user ID to AuthService', async () => {
+    it('returns the authenticated user from UsersService', async () => {
       const userId = 1;
 
       const user = {
@@ -179,17 +178,13 @@ describe('AuthController', () => {
         email: 'john@example.com',
       };
 
-      authService.me.mockResolvedValue(user as never);
+      usersService.findByIdOrFail.mockResolvedValue(user as never);
 
-      const request = {
-        user: {
-          id: userId,
-        },
-      } as unknown as Request;
+      const caller = { id: userId } as AuthenticatedUser;
 
-      const result = await controller.me(request);
+      const result = await controller.me(caller);
 
-      expect(authService.me).toHaveBeenCalledWith(userId);
+      expect(usersService.findByIdOrFail).toHaveBeenCalledWith(userId);
       expect(result).toBe(user);
     });
   });
@@ -204,13 +199,9 @@ describe('AuthController', () => {
 
       authService.logout.mockResolvedValue(response);
 
-      const request = {
-        user: {
-          id: userId,
-        },
-      } as unknown as Request;
+      const caller = { id: userId } as AuthenticatedUser;
 
-      const result = await controller.logout(request);
+      const result = await controller.logout(caller);
 
       expect(authService.logout).toHaveBeenCalledWith(userId);
       expect(result).toBe(response);

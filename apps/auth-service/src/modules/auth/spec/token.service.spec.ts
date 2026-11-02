@@ -121,11 +121,11 @@ describe('TokenService', () => {
     });
   });
 
-  describe('getResetTokenExpiry', () => {
+  describe('createResetToken — expiry', () => {
     it('returns a date PASSWORD_RESET_TOKEN_TTL_MS in the future', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-22T12:00:00.000Z'));
 
-      const expiresAt = service.getResetTokenExpiry();
+      const { expiresAt } = service.createResetToken();
 
       expect(configService.getOrThrow).toHaveBeenCalledWith(
         'PASSWORD_RESET_TOKEN_TTL_MS',
@@ -141,7 +141,7 @@ describe('TokenService', () => {
       config['PASSWORD_RESET_TOKEN_TTL_MS'] = 3600000;
       service = new TokenService(signingKeyService, configService);
 
-      expect(service.getResetTokenExpiry()).toEqual(
+      expect(service.createResetToken().expiresAt).toEqual(
         new Date('2026-09-22T13:00:00.000Z'),
       );
 

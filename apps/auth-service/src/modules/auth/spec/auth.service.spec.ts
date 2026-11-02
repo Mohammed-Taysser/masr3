@@ -87,7 +87,6 @@ describe('AuthService', () => {
       ACCESS_TOKEN_EXPIRES_IN_SECONDS: 300,
       createResetToken: jest.fn(),
       hashToken: jest.fn(),
-      getResetTokenExpiry: jest.fn(),
     } as unknown as jest.Mocked<TokenService>;
 
     kafkaPublisher = {
@@ -369,9 +368,8 @@ describe('AuthService', () => {
       tokenService.createResetToken.mockReturnValue({
         token: 'raw-reset-token',
         tokenHash: 'hashed-reset-token',
+        expiresAt,
       });
-
-      tokenService.getResetTokenExpiry.mockReturnValue(expiresAt);
 
       usersService.setPasswordResetToken.mockResolvedValue();
 
@@ -380,8 +378,6 @@ describe('AuthService', () => {
       expect(usersService.findByEmail).toHaveBeenCalledWith(dto.email);
 
       expect(tokenService.createResetToken).toHaveBeenCalled();
-
-      expect(tokenService.getResetTokenExpiry).toHaveBeenCalled();
 
       expect(usersService.setPasswordResetToken).toHaveBeenCalledWith(user.id, {
         tokenHash: 'hashed-reset-token',
@@ -475,18 +471,6 @@ describe('AuthService', () => {
 
       expect(passwordService.hash).not.toHaveBeenCalled();
       expect(usersService.changePassword).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('me', () => {
-    it('returns the authenticated user', async () => {
-      usersService.findByIdOrFail.mockResolvedValue(user);
-
-      const result = await service.me(user.id);
-
-      expect(usersService.findByIdOrFail).toHaveBeenCalledWith(user.id);
-
-      expect(result).toBe(user);
     });
   });
 
